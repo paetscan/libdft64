@@ -22,35 +22,61 @@ static void PIN_FAST_ANALYSIS_CALL r2r_unitary_opb_l(THREADID tid,
 
 static void PIN_FAST_ANALYSIS_CALL r2r_unitary_opw(THREADID tid, uint32_t src) {
   tag_t tmp_tag[] = {RTAG[src][0], RTAG[src][1]};
-  tag_t dst1_tag[] = {RTAG[DFT_REG_RDX][0], RTAG[DFT_REG_RDX][1]};
   tag_t dst2_tag[] = {RTAG[DFT_REG_RAX][0], RTAG[DFT_REG_RAX][1]};
 
-  RTAG[DFT_REG_RDX][0] = tag_combine(dst1_tag[0], tmp_tag[0]);
-  RTAG[DFT_REG_RDX][1] = tag_combine(dst1_tag[1], tmp_tag[1]);
+  tag_t combined_src1_tag = tag_traits<tag_t>::cleared_val;
+  for (size_t i = 0; i < 2; ++i) {
+    combined_src1_tag = tag_combine(combined_src1_tag, tmp_tag[i]);
+  }
 
-  RTAG[DFT_REG_RAX][0] = tag_combine(dst2_tag[0], tmp_tag[0]);
-  RTAG[DFT_REG_RAX][1] = tag_combine(dst2_tag[1], tmp_tag[1]);
+  tag_t combined_src2_tag = tag_traits<tag_t>::cleared_val;
+  for (size_t i = 0; i < 2; ++i) {
+    combined_src2_tag = tag_combine(combined_src2_tag, dst2_tag[i]);
+  }
+
+  for (size_t i = 0; i < 2; ++i) {
+    RTAG[DFT_REG_RAX][i] = tag_combine(combined_src1_tag, combined_src2_tag);
+    RTAG[DFT_REG_RDX][i] = tag_combine(combined_src1_tag, combined_src2_tag);
+  }
 }
 
 static void PIN_FAST_ANALYSIS_CALL r2r_unitary_opq(THREADID tid, uint32_t src) {
   tag_t tmp_tag[] = R64TAG(src);
-  tag_t dst1_tag[] = R64TAG(DFT_REG_RDX);
   tag_t dst2_tag[] = R64TAG(DFT_REG_RAX);
 
-  for (size_t i = 0; i < 8; i++) {
-    RTAG[DFT_REG_RDX][i] = tag_combine(dst1_tag[i], tmp_tag[i]);
-    RTAG[DFT_REG_RAX][i] = tag_combine(dst2_tag[i], tmp_tag[i]);
+  tag_t combined_src1_tag = tag_traits<tag_t>::cleared_val;
+  for (size_t i = 0; i < 8; ++i) {
+    combined_src1_tag = tag_combine(combined_src1_tag, tmp_tag[i]);
+  }
+
+  tag_t combined_src2_tag = tag_traits<tag_t>::cleared_val;
+  for (size_t i = 0; i < 8; ++i) {
+    combined_src2_tag = tag_combine(combined_src2_tag, dst2_tag[i]);
+  }
+
+  for (size_t i = 0; i < 8; ++i) {
+    RTAG[DFT_REG_RAX][i] = tag_combine(combined_src1_tag, combined_src2_tag);
+    RTAG[DFT_REG_RDX][i] = tag_combine(combined_src1_tag, combined_src2_tag);
   }
 }
 
 static void PIN_FAST_ANALYSIS_CALL r2r_unitary_opl(THREADID tid, uint32_t src) {
   tag_t tmp_tag[] = R32TAG(src);
-  tag_t dst1_tag[] = R32TAG(DFT_REG_RDX);
   tag_t dst2_tag[] = R32TAG(DFT_REG_RAX);
 
-  for (size_t i = 0; i < 4; i++) {
-    RTAG[DFT_REG_RDX][i] = tag_combine(dst1_tag[i], tmp_tag[i]);
-    RTAG[DFT_REG_RAX][i] = tag_combine(dst2_tag[i], tmp_tag[i]);
+  tag_t combined_src1_tag = tag_traits<tag_t>::cleared_val;
+  for (size_t i = 0; i < 4; ++i) {
+    combined_src1_tag = tag_combine(combined_src1_tag, tmp_tag[i]);
+  }
+
+  tag_t combined_src2_tag = tag_traits<tag_t>::cleared_val;
+  for (size_t i = 0; i < 4; ++i) {
+    combined_src2_tag = tag_combine(combined_src2_tag, dst2_tag[i]);
+  }
+
+  for (size_t i = 0; i < 4; ++i) {
+    RTAG[DFT_REG_RAX][i] = tag_combine(combined_src1_tag, combined_src2_tag);
+    RTAG[DFT_REG_RDX][i] = tag_combine(combined_src1_tag, combined_src2_tag);
   }
 }
 
@@ -64,34 +90,61 @@ static void PIN_FAST_ANALYSIS_CALL m2r_unitary_opb(THREADID tid, ADDRINT src) {
 
 static void PIN_FAST_ANALYSIS_CALL m2r_unitary_opw(THREADID tid, ADDRINT src) {
   tag_t tmp_tag[] = M16TAG(src);
-  tag_t dst1_tag[] = R16TAG(DFT_REG_RDX);
   tag_t dst2_tag[] = R16TAG(DFT_REG_RAX);
 
-  for (size_t i = 0; i < 2; i++) {
-    RTAG[DFT_REG_RDX][i] = tag_combine(dst1_tag[i], tmp_tag[i]);
-    RTAG[DFT_REG_RAX][i] = tag_combine(dst2_tag[i], tmp_tag[i]);
+  tag_t combined_src1_tag = tag_traits<tag_t>::cleared_val;
+  for (size_t i = 0; i < 2; ++i) {
+    combined_src1_tag = tag_combine(combined_src1_tag, tmp_tag[i]);
+  }
+
+  tag_t combined_src2_tag = tag_traits<tag_t>::cleared_val;
+  for (size_t i = 0; i < 2; ++i) {
+    combined_src2_tag = tag_combine(combined_src2_tag, dst2_tag[i]);
+  }
+
+  for (size_t i = 0; i < 2; ++i) {
+    RTAG[DFT_REG_RAX][i] = tag_combine(combined_src1_tag, combined_src2_tag);
+    RTAG[DFT_REG_RDX][i] = tag_combine(combined_src1_tag, combined_src2_tag);
   }
 }
 
 static void PIN_FAST_ANALYSIS_CALL m2r_unitary_opq(THREADID tid, ADDRINT src) {
   tag_t tmp_tag[] = M64TAG(src);
-  tag_t dst1_tag[] = R64TAG(DFT_REG_RDX);
   tag_t dst2_tag[] = R64TAG(DFT_REG_RAX);
 
-  for (size_t i = 0; i < 8; i++) {
-    RTAG[DFT_REG_RDX][i] = tag_combine(dst1_tag[i], tmp_tag[i]);
-    RTAG[DFT_REG_RAX][i] = tag_combine(dst2_tag[i], tmp_tag[i]);
+  tag_t combined_src1_tag = tag_traits<tag_t>::cleared_val;
+  for (size_t i = 0; i < 8; ++i) {
+    combined_src1_tag = tag_combine(combined_src1_tag, tmp_tag[i]);
+  }
+
+  tag_t combined_src2_tag = tag_traits<tag_t>::cleared_val;
+  for (size_t i = 0; i < 8; ++i) {
+    combined_src2_tag = tag_combine(combined_src2_tag, dst2_tag[i]);
+  }
+
+  for (size_t i = 0; i < 8; ++i) {
+    RTAG[DFT_REG_RAX][i] = tag_combine(combined_src1_tag, combined_src2_tag);
+    RTAG[DFT_REG_RDX][i] = tag_combine(combined_src1_tag, combined_src2_tag);
   }
 }
 
 static void PIN_FAST_ANALYSIS_CALL m2r_unitary_opl(THREADID tid, ADDRINT src) {
   tag_t tmp_tag[] = M32TAG(src);
-  tag_t dst1_tag[] = R32TAG(DFT_REG_RDX);
   tag_t dst2_tag[] = R32TAG(DFT_REG_RAX);
 
-  for (size_t i = 0; i < 4; i++) {
-    RTAG[DFT_REG_RDX][i] = tag_combine(dst1_tag[i], tmp_tag[i]);
-    RTAG[DFT_REG_RAX][i] = tag_combine(dst2_tag[i], tmp_tag[i]);
+  tag_t combined_src1_tag = tag_traits<tag_t>::cleared_val;
+  for (size_t i = 0; i < 4; ++i) {
+    combined_src1_tag = tag_combine(combined_src1_tag, tmp_tag[i]);
+  }
+
+  tag_t combined_src2_tag = tag_traits<tag_t>::cleared_val;
+  for (size_t i = 0; i < 4; ++i) {
+    combined_src2_tag = tag_combine(combined_src2_tag, dst2_tag[i]);
+  }
+
+  for (size_t i = 0; i < 4; ++i) {
+    RTAG[DFT_REG_RAX][i] = tag_combine(combined_src1_tag, combined_src2_tag);
+    RTAG[DFT_REG_RDX][i] = tag_combine(combined_src1_tag, combined_src2_tag);
   }
 }
 

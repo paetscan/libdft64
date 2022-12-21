@@ -2,7 +2,7 @@
 
 #include "bdd_tag.h"
 #include "debug.h"
-#include <assert.h>
+#include <cassert>
 #include <cstring>
 #include <iostream>
 #include <sstream>
@@ -17,15 +17,15 @@
 
 BDDTag::BDDTag() {
   nodes.reserve(VEC_CAP);
-  nodes.push_back(TagNode(ROOT, 0, 0));
+  nodes.emplace_back(ROOT, 0, 0);
 };
 
-BDDTag::~BDDTag(){};
+BDDTag::~BDDTag()= default;;
 
 lb_type BDDTag::alloc_node(lb_type parent, tag_off begin, tag_off end) {
   lb_type lb = nodes.size();
   if (lb < MAX_LB) {
-    nodes.push_back(TagNode(parent, begin, end));
+    nodes.emplace_back(parent, begin, end);
     return lb;
   } else {
     return ROOT;
@@ -209,9 +209,8 @@ std::string BDDTag::to_string(lb_type lb) {
   ss += "{";
   std::vector<tag_seg> tags = find(lb);
   char buf[100];
-  for (std::vector<tag_seg>::iterator it = tags.begin(); it != tags.end();
-       ++it) {
-    sprintf(buf, "(%d, %d) ", it->begin, it->end);
+  for (auto & tag : tags) {
+    sprintf(buf, "(%d, %d) ", tag.begin, tag.end);
     std::string s(buf);
     ss += s;
   }

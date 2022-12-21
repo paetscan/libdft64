@@ -19,6 +19,8 @@ template <> uint8_t tag_alloc<uint8_t>(unsigned int offset) {
   return offset > 0;
 }
 
+uint8_t tag_traits<uint8_t>::cleared_val = 0;
+
 /********************************************************
 tag set tags
 ********************************************************/
@@ -36,6 +38,10 @@ template <> std::string tag_sprint(lb_type const &tag) {
 
 template <> lb_type tag_alloc<lb_type>(unsigned int offset) {
   return bdd_tag.insert(offset);
+}
+
+void ClearTags() {
+    bdd_tag.clearAll();
 }
 
 std::vector<tag_seg> tag_get(lb_type t) { return bdd_tag.find(t); }

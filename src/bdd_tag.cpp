@@ -218,3 +218,9 @@ std::string BDDTag::to_string(lb_type lb) {
   ss += "}";
   return ss;
 }
+
+void BDDTag::clearAll() {
+    nodes.clear();
+    nodes.reserve(VEC_CAP);
+    nodes.emplace_back(ROOT, 0, 0);
+}

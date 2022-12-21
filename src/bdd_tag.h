@@ -64,6 +64,8 @@ public:
 
   const std::vector<tag_seg> find(lb_type lb);
   std::string to_string(lb_type lb);
+
+  void clearAll();
 };
 
 #endif // LABEL_SET_H

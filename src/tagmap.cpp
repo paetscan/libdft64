@@ -46,6 +46,23 @@
 tag_dir_t tag_dir;
 extern thread_ctx_t *threads_ctx;
 
+void tagmap_clear() {
+  for (size_t i = 0; i < TOP_DIR_SZ; ++i) {
+    if (tag_dir.table[i] != nullptr) {
+      tag_table_t *table = tag_dir.table[i];
+      for (size_t j = 0; j < PAGETABLE_SZ; ++j) {
+        tag_page_t *page = table->page[j];
+        if(page != nullptr)
+            std::fill(page->tag, page->tag + PAGE_SIZE, tag_traits<tag_t>::cleared_val);
+      }
+    }
+  }
+
+  for (size_t i = 0; i < THREAD_CTX_BLK; ++i) {
+    std::fill(&threads_ctx[i].vcpu.gpr[0][0], &threads_ctx[i].vcpu.gpr[GRP_NUM][TAGS_PER_GPR], tag_traits<tag_t>::cleared_val);
+  }
+}
+
 inline void tag_dir_setb(tag_dir_t &dir, ADDRINT addr, tag_t const &tag) {
   if (addr > 0x7fffffffffff) {
     return;

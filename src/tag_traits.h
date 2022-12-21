@@ -14,7 +14,7 @@ typedef uint8_t libdft_tag_uint8;
 
 template <> struct tag_traits<unsigned char> {
   typedef uint8_t type;
-  static const uint8_t cleared_val = 0;
+  static uint8_t cleared_val;
 };
 
 template <> uint8_t tag_combine(uint8_t const &lhs, uint8_t const &rhs);
@@ -38,6 +38,8 @@ template <> lb_type tag_combine(lb_type const &lhs, lb_type const &rhs);
 // template <> void tag_combine_inplace(lb_type &lhs, lb_type const &rhs);
 template <> std::string tag_sprint(lb_type const &tag);
 template <> lb_type tag_alloc<lb_type>(unsigned int offset);
+
+void ClearTags();
 
 std::vector<tag_seg> tag_get(lb_type);
 

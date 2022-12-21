@@ -179,3 +179,31 @@ void ins_unitary_op(INS ins) {
       R_CALL(r2r_unitary_opb_l, reg_src);
   }
 }
+
+static void PIN_FAST_ANALYSIS_CALL _bswap_opl(THREADID tid, uint32_t reg) {
+    tag_t save_tags[] = R32TAG(reg);
+
+    for (size_t i = 0; i < 4; i++) {
+        RTAG[reg][3 - i] = save_tags[i];
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL _bswap_opp(THREADID tid, uint32_t reg) {
+    tag_t save_tags[] = R64TAG(reg);
+
+    for (size_t i = 0; i < 8; i++) {
+        RTAG[reg][7 - i] = save_tags[i];
+    }
+}
+
+void ins_bswap_op(INS ins) {
+    REG reg = INS_OperandReg(ins, OP_0);
+    if (REG_is_gr64(reg)) {
+        R_CALL(_bswap_opp, reg);
+    } else if (REG_is_gr32(reg)) {
+        R_CALL(_bswap_opl, reg);
+    } else {
+        xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+        LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+    }
+}

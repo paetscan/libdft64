@@ -5,4 +5,6 @@
 
 void ins_unitary_op(INS ins);
 
+void ins_bswap_op(INS ins);
+
 #endif

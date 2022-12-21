@@ -47,7 +47,7 @@ std::vector<tag_seg> tag_get(lb_type);
 others
 ********************************************************/
 #if !defined(LIBDFT_TAG_TYPE)
-#define LIBDFT_TAG_TYPE libdft_bdd_tag
+#define LIBDFT_TAG_TYPE libdft_tag_uint8
 #endif
 typedef LIBDFT_TAG_TYPE tag_t;
 

@@ -68,4 +68,7 @@ void ins_vpslldq_op(INS ins);
 
 void ins_psrldq_op(INS ins);
 void ins_vpsrldq_op(INS ins);
+
+void ins_psllx_op(INS ins, uint32_t chunkSize);
+void ins_vpsllx_op(INS ins, uint32_t chunkSize);
 #endif

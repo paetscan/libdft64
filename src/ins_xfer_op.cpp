@@ -1666,3 +1666,277 @@ void ins_vpsrldq_op(INS ins) {
         LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
     }
 }
+
+static void PIN_FAST_ANALYSIS_CALL r_psllx_op(THREADID tid, uint32_t reg_dst, uint32_t imm, uint32_t chunkSize, uint32_t byteCount) {
+    if (imm == 0) {
+        return;
+    }
+    // If the value specified by the count operand is greater than 15 (for words), 31 (for doublewords),
+    // or 63 (for a quadword), then the destination operand is set to all 0s.
+    if (imm > (chunkSize * 8) - 1) {
+        for (size_t i = 0; i < byteCount; i++) {
+            RTAG[reg_dst][i] = tag_traits<tag_t>::cleared_val;
+        }
+        return;
+    }
+
+    tag_t save_tags[byteCount];
+    for (size_t i = 0; i < byteCount; i++) {
+        save_tags[i] = RTAG[reg_dst][i];
+    }
+    // Calculate bytewise taint from bitwise shift
+    auto res = std::div(imm, 8);
+
+    // Iterate over words / dwords / qwords
+    for (size_t k = 0; k < byteCount / chunkSize; k++) {
+        // If the bitshift uses whole bytes
+        // The whole bytes can be zeroed
+        for (size_t i = 0; i < (uint32_t)res.quot; i++) {
+            RTAG[reg_dst][k * chunkSize + i] = tag_traits<tag_t>::cleared_val;
+        }
+        if (res.rem == 0) {
+            // Shift the tainted values
+            for (size_t i = res.quot; i < chunkSize; i++) {
+                RTAG[reg_dst][k * chunkSize + i] = save_tags[k * chunkSize + i - res.quot];
+            }
+        } else { // We need to combine taint from bytes
+            // The rest has to be combined
+            RTAG[reg_dst][k * chunkSize + res.quot] = save_tags[k * chunkSize];
+            for (size_t i = res.quot + 1; i < chunkSize; i++) {
+                RTAG[reg_dst][k * chunkSize + i] = tag_combine(
+                        save_tags[k * chunkSize + i - res.quot], save_tags[k * chunkSize + i - res.quot - 1]);
+            }
+        }
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL mr_psllx_opq(THREADID tid, uint32_t reg_dst, uint64_t addr, uint32_t chunkSize, uint32_t byteCount) {
+    uint64_t imm = *((uint64_t *)(addr));
+
+    r_psllx_op(tid, reg_dst, (uint32_t)imm, chunkSize, byteCount);
+}
+
+static void PIN_FAST_ANALYSIS_CALL mr_psllx_opx(THREADID tid, uint32_t reg_dst, uint64_t addr, uint32_t chunkSize, uint32_t byteCount) {
+    // If the count operand is a memory address, 128 bits are loaded but the upper 64 bits are ignored.
+    uint64_t imm = *((uint64_t *)(addr + sizeof(uint64_t)));
+
+    r_psllx_op(tid, reg_dst, (uint32_t)imm, chunkSize, byteCount);
+}
+
+static void PIN_FAST_ANALYSIS_CALL rr_psllx_op(THREADID tid, uint32_t reg_dst, uint8_t *reg_src, uint32_t chunkSize, uint32_t byteCount) {
+    // The upper 64 bits of the register are ignored
+    uint64_t imm = *((uint64_t *)(reg_src));
+
+    r_psllx_op(tid, reg_dst, (uint32_t)imm, chunkSize, byteCount);
+}
+
+void ins_psllx_op(INS ins, uint32_t chunkSize) {
+    // chunkSize 2 for psllw, 4 for pslld, 8 for psllq
+    REG reg_dst = INS_OperandReg(ins, OP_0);
+    if (REG_is_mm(reg_dst)) {
+        uint32_t byteCount = 8;
+        if (INS_OperandIsImmediate(ins, OP_1)) {
+            UINT32 imm = (UINT32)INS_OperandImmediate(ins, OP_1);
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_psllx_op,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_UINT32, imm,
+                           IARG_UINT32, chunkSize,
+                           IARG_UINT32, byteCount,
+                           IARG_END);
+        } else if (INS_OperandIsMemory(ins, OP_1)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)mr_psllx_opq,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_MEMORYREAD_EA,
+                           IARG_UINT32, chunkSize,
+                           IARG_UINT32, byteCount,
+                           IARG_END);
+        } else if (REG_is_mm(INS_OperandReg(ins, OP_1))) {
+            REG reg_src = INS_OperandReg(ins, OP_1);
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)rr_psllx_op,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_REG_CONST_REFERENCE, reg_src,
+                           IARG_UINT32, chunkSize,
+                           IARG_UINT32, byteCount,
+                           IARG_END);
+        }
+    } else if (REG_is_xmm(reg_dst)) {
+        uint32_t byteCount = 16;
+        if (INS_OperandIsImmediate(ins, OP_1)) {
+            UINT32 imm = (UINT32)INS_OperandImmediate(ins, OP_1);
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_psllx_op,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_UINT32, imm,
+                           IARG_UINT32, chunkSize,
+                           IARG_UINT32, byteCount,
+                           IARG_END);
+        } else if (INS_OperandIsMemory(ins, OP_1)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)mr_psllx_opx,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_MEMORYREAD_EA,
+                           IARG_UINT32, chunkSize,
+                           IARG_UINT32, byteCount,
+                           IARG_END);
+        } else if (REG_is_xmm(INS_OperandReg(ins, OP_1))) {
+            REG reg_src = INS_OperandReg(ins, OP_1);
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)rr_psllx_op,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_REG_CONST_REFERENCE, reg_src,
+                           IARG_UINT32, chunkSize,
+                           IARG_UINT32, byteCount,
+                           IARG_END);
+        }
+    } else {
+        xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+        LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL r_vpsllx_op(THREADID tid, uint32_t reg_dst, uint32_t reg_src, uint32_t imm, uint32_t chunkSize, uint32_t byteCount) {
+    if (imm == 0) {
+        return;
+    }
+    // If the value specified by the count operand is greater than 15 (for words), 31 (for doublewords),
+    // or 63 (for a quadword), then the destination operand is set to all 0s.
+    if (imm > (chunkSize * 8) - 1) {
+        for (size_t i = 0; i < byteCount; i++) {
+            RTAG[reg_dst][i] = tag_traits<tag_t>::cleared_val;
+            RTAG[reg_src][i] = tag_traits<tag_t>::cleared_val;
+        }
+        return;
+    }
+
+    tag_t save_tags[byteCount];
+    for (size_t i = 0; i < byteCount; i++) {
+        save_tags[i] = RTAG[reg_src][i];
+    }
+    // Calculate bytewise taint from bitwise shift
+    auto res = std::div(imm, 8);
+
+    // Iterate over words / dwords / qwords
+    for (size_t k = 0; k < byteCount / chunkSize; k++) {
+        // If the bitshift uses whole bytes
+        // The whole bytes can be zeroed
+        for (size_t i = 0; i < (uint32_t)res.quot; i++) {
+            RTAG[reg_src][k * chunkSize + i] = tag_traits<tag_t>::cleared_val;
+        }
+        if (!res.rem) {
+            // Shift the tainted values
+            for (size_t i = res.quot; i < chunkSize; i++) {
+                RTAG[reg_src][i] = save_tags[k * chunkSize + i - res.quot];
+            }
+        } else { // We need to combine taint from bytes
+            // The rest has to be combined
+            RTAG[reg_src][k * chunkSize + res.quot] = save_tags[k * chunkSize];
+            for (size_t i = res.quot + 1; i < chunkSize; i++) {
+                RTAG[reg_src][i] = tag_combine(
+                        save_tags[k * chunkSize + i - res.quot], save_tags[k * chunkSize + i - res.quot - 1]);
+            }
+        }
+    }
+
+    // Copy the resulting taint values
+    for (size_t i = 0; i < byteCount; i++) {
+        RTAG[reg_dst][i] = RTAG[reg_src][i];
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL mr_vpsllx_opx(THREADID tid, uint32_t reg_dst, uint32_t reg_src, uint64_t addr, uint32_t chunkSize, uint32_t byteCount) {
+    // If the count operand is a memory address, 128 bits are loaded but the upper 64 bits are ignored.
+    uint64_t imm = *((uint64_t *)(addr + sizeof(uint64_t)));
+
+    r_vpsllx_op(tid, reg_dst, reg_src, (uint32_t)imm, chunkSize, byteCount);
+}
+
+static void PIN_FAST_ANALYSIS_CALL mr_vpsllx_opy(THREADID tid, uint32_t reg_dst, uint32_t reg_src, uint64_t addr, uint32_t chunkSize, uint32_t byteCount) {
+    // If the count operand is a memory address, 256 bits are loaded but the upper 64 + 128 bits are ignored.
+    uint64_t imm = *((uint64_t *)(addr + 3*sizeof(uint64_t)));
+
+    r_vpsllx_op(tid, reg_dst, reg_src, (uint32_t)imm, chunkSize, byteCount);
+}
+
+static void PIN_FAST_ANALYSIS_CALL rr_vpsllx_op(THREADID tid, uint32_t reg_dst, uint32_t reg_src, uint8_t *reg_src2, uint32_t chunkSize, uint32_t byteCount) {
+    // The upper 64 + 128 bits of the register are ignored
+    uint64_t imm = *((uint64_t *)(reg_src2));
+
+    r_vpsllx_op(tid, reg_dst, reg_src, (uint32_t)imm, chunkSize, byteCount);
+}
+
+void ins_vpsllx_op(INS ins, uint32_t chunkSize) {
+    // chunkSize 2 for vpsllw, 4 for vpslld, 8 for vpsllq
+    REG reg_dst = INS_OperandReg(ins, OP_0);
+    REG reg_src = INS_OperandReg(ins, OP_1);
+    if (REG_is_xmm(reg_dst)) {
+        uint32_t byteCount = 16;
+        if (INS_OperandIsImmediate(ins, OP_2)) {
+            UINT32 imm = (UINT32)INS_OperandImmediate(ins, OP_2);
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_vpsllx_op,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_UINT32, REG_INDX(reg_src),
+                           IARG_UINT32, imm,
+                           IARG_UINT32, chunkSize,
+                           IARG_UINT32, byteCount,
+                           IARG_END);
+        } else if (INS_OperandIsMemory(ins, OP_2)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)mr_vpsllx_opx,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_UINT32, REG_INDX(reg_src),
+                           IARG_MEMORYREAD_EA,
+                           IARG_UINT32, chunkSize,
+                           IARG_UINT32, byteCount,
+                           IARG_END);
+        } else if (REG_is_xmm(INS_OperandReg(ins, OP_2))) {
+            REG reg_src2 = INS_OperandReg(ins, OP_2);
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)rr_vpsllx_op,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_UINT32, REG_INDX(reg_src),
+                           IARG_REG_CONST_REFERENCE, reg_src2,
+                           IARG_UINT32, chunkSize,
+                           IARG_UINT32, byteCount,
+                           IARG_END);
+        }
+    } else if (REG_is_ymm(reg_dst)) {
+        uint32_t byteCount = 32;
+        if (INS_OperandIsImmediate(ins, OP_2)) {
+            UINT32 imm = (UINT32)INS_OperandImmediate(ins, OP_2);
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_vpsllx_op,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_UINT32, REG_INDX(reg_src),
+                           IARG_UINT32, imm,
+                           IARG_UINT32, chunkSize,
+                           IARG_UINT32, byteCount,
+                           IARG_END);
+        } else if (INS_OperandIsMemory(ins, OP_2)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)mr_vpsllx_opy,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_UINT32, REG_INDX(reg_src),
+                           IARG_MEMORYREAD_EA,
+                           IARG_UINT32, chunkSize,
+                           IARG_UINT32, byteCount,
+                           IARG_END);
+        } else if (REG_is_ymm(INS_OperandReg(ins, OP_2))) {
+            REG reg_src2 = INS_OperandReg(ins, OP_2);
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)rr_vpsllx_op,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_UINT32, REG_INDX(reg_src),
+                           IARG_REG_CONST_REFERENCE, reg_src2,
+                           IARG_UINT32, chunkSize,
+                           IARG_UINT32, byteCount,
+                           IARG_END);
+        }
+    } else {
+        xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+        LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+    }
+}

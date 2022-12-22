@@ -14,4 +14,6 @@ void ins_pmovmskb_op(INS ins);
 
 void ins_pinsrd_op(INS ins);
 
+void ins_vinserti_op(INS ins);
+
 #endif

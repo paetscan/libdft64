@@ -234,3 +234,31 @@ void ins_ternary_op(INS ins) {
         }
     }
 }
+
+void clear_xmm(THREADID tid, UINT32 reg) {
+    for (size_t i = 0; i < 16; ++i) {
+            RTAG[reg][i] = tag_traits<tag_t>::cleared_val;
+        }
+}
+
+void clear_ymm(THREADID tid, UINT32 reg) {
+    for (size_t i = 0; i < 32; ++i) {
+            RTAG[reg][i] = tag_traits<tag_t>::cleared_val;
+        }
+}    
+
+void ins_clear_ternary_op(INS ins) {
+    REG reg = INS_OperandReg(ins, OP_0);
+
+    if (REG_is_xmm(reg)) {   
+        INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(clear_xmm),
+            IARG_THREAD_ID,
+            IARG_UINT32, REG_INDX(reg),
+            IARG_END);
+    } else if (REG_is_ymm(reg)) {
+        INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(clear_ymm),
+            IARG_THREAD_ID,
+            IARG_UINT32, REG_INDX(reg),
+            IARG_END);
+    }     
+}

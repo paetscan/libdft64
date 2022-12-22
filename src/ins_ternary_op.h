@@ -5,4 +5,6 @@
 
 void ins_ternary_op(INS ins);
 
+void ins_clear_ternary_op(INS ins);
+
 #endif

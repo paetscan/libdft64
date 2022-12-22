@@ -280,3 +280,68 @@ void ins_padd_op(INS ins) {
         }
     }
 }
+
+static void PIN_FAST_ANALYSIS_CALL r2r_shufpd_opx(THREADID tid, uint32_t dst, uint32_t src, uint32_t imm) {
+    tag_t src_tags[] = R128TAG(src);
+    tag_t dst_tags[] = R128TAG(dst);
+
+    // Depending on the two low bits of imm, we need the tag of x[63:0] or x[127:64]
+    // By multiplying with 8, we can directly choose the needed byte taint value
+    size_t choice0 = (imm & 0x1) * 8;
+    size_t choice1 = ((imm & 0x2) >> 1) * 8;
+
+    for (size_t i = 0; i < 8; ++i)
+    {
+      RTAG[dst][i] = dst_tags[i + choice0];
+      RTAG[dst][i + 8] = src_tags[i + choice1];
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL m2r_shufpd_opx(THREADID tid, ADDRINT dst, uint32_t src, uint32_t imm) {
+    tag_t src_tags[] = M128TAG(src);
+    tag_t dst_tags[] = R128TAG(dst);
+
+    // Depending on the two low bits of imm, we need the tag of x[63:0] or x[127:64]
+    // By multiplying with 8, we can directly choose the needed byte taint value
+    size_t choice0 = (imm & 0x1) * 8;
+    size_t choice1 = ((imm & 0x2) >> 1) * 8;
+
+    for (size_t i = 0; i < 8; ++i)
+    {
+      RTAG[dst][i] = dst_tags[i + choice0];
+      RTAG[dst][i + 8] = src_tags[i + choice1];
+    }
+}
+
+void ins_shufpd_op(INS ins) {
+    REG reg_dst, reg_src;
+    UINT32 imm = INS_OperandImmediate(ins, OP_2) & 0x3;
+    if (INS_OperandIsMemory(ins, OP_1)) {
+        reg_dst = INS_OperandReg(ins, OP_0);
+        if (REG_is_xmm(reg_dst)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m2r_shufpd_opx,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_MEMORYREAD_EA,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_UINT32, imm,
+                           IARG_END);
+        } else {
+            xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+            LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+        }
+    } else {
+        reg_dst = INS_OperandReg(ins, OP_0);
+        reg_src = INS_OperandReg(ins, OP_1);
+        if (REG_is_xmm(reg_dst)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2r_shufpd_opx,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_UINT32, REG_INDX(reg_src),
+                           IARG_UINT32, imm,
+                           IARG_END);
+        } else {
+            xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+            LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+        }
+    }
+}

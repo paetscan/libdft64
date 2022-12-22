@@ -62,4 +62,7 @@ void ins_vpunpckhqdq_op(INS ins);
 
 void ins_pshufd_op(INS ins);
 void ins_vpshufd_op(INS ins);
+
+void ins_pslldq_op(INS ins);
+void ins_vpslldq_op(INS ins);
 #endif

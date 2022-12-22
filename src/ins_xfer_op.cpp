@@ -1438,3 +1438,116 @@ void ins_vpshufd_op(INS ins) {
         }
     }
 }
+
+static void PIN_FAST_ANALYSIS_CALL _pslldq_opx(THREADID tid, uint32_t reg, uint32_t imm) {
+    // If the value specified by the count operand is greater than 15, the destination operand is set to all 0s.
+    if (imm > 15) {
+        for (size_t i = 0; i < 16; i++) {
+            RTAG[reg][i] = tag_traits<tag_t>::cleared_val;
+        }
+        return;
+    }
+
+    tag_t save_tags[] = R128TAG(reg);
+
+    for (size_t i = 0; i < imm; i++) {
+        RTAG[reg][i] = tag_traits<tag_t>::cleared_val;
+    }
+
+    for (size_t i = imm; i < 16; i++) {
+        RTAG[reg][i] = save_tags[i - imm];
+    }
+}
+
+void ins_pslldq_op(INS ins) {
+    REG reg = INS_OperandReg(ins, OP_0);
+    UINT32 imm = (UINT32)INS_OperandImmediate(ins, OP_1);
+    if (REG_is_xmm(reg)) {
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)_pslldq_opx,
+                       IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                       IARG_UINT32, REG_INDX(reg),
+                       IARG_UINT32, imm,
+                       IARG_END);
+    } else {
+        xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+        LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL _vpslldq_opx(THREADID tid, uint32_t reg_dst, uint32_t reg_src, uint32_t imm) {
+    // If the value specified by the count operand is greater than 15, the destination operand is set to all 0s.
+    if (imm > 15) {
+        for (size_t i = 0; i < 16; i++) {
+            RTAG[reg_dst][i] = tag_traits<tag_t>::cleared_val;
+        }
+        return;
+    }
+
+    tag_t src_tags[] = R128TAG(reg_src);
+
+    for (size_t i = 0; i < imm; i++) {
+        RTAG[reg_dst][i] = tag_traits<tag_t>::cleared_val;
+    }
+
+    for (size_t i = imm; i < 16; i++) {
+        RTAG[reg_dst][i] = src_tags[i - imm];
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL _vpslldq_opy(THREADID tid, uint32_t reg_dst, uint32_t reg_src, uint32_t imm) {
+    // If the value specified by the count operand is greater than 15, the destination operand is set to all 0s.
+    if (imm > 15) {
+        for (size_t i = 0; i < 16; i++) {
+            RTAG[reg_dst][i] = tag_traits<tag_t>::cleared_val;
+        }
+        return;
+    }
+
+    tag_t src_tags[] = R256TAG(reg_src);
+
+    for (size_t i = 0; i < imm; i++) {
+        RTAG[reg_dst][i] = tag_traits<tag_t>::cleared_val;
+    }
+
+    for (size_t i = imm; i < 32; i++) {
+        RTAG[reg_dst][i] = src_tags[i - imm];
+    }
+
+    // For YMM: the count operand applies to both the low and high 128-bit lanes
+    for (size_t i = 16; i < 16 + imm; i++) {
+        RTAG[reg_dst][i] = tag_traits<tag_t>::cleared_val;
+    }
+
+    for (size_t i = 16 + imm; i < 32; i++) {
+        RTAG[reg_dst][i] = src_tags[i - imm];
+    }
+}
+
+void ins_vpslldq_op(INS ins) {
+    // only support AVX(2)
+    if (INS_OperandIsMemory(ins, OP_1)) {
+        return;
+    }
+
+    REG reg_dst = INS_OperandReg(ins, OP_0);
+    REG reg_src = INS_OperandReg(ins, OP_1);
+    UINT32 imm = (UINT32)INS_OperandImmediate(ins, OP_2);
+    if (REG_is_xmm(reg_dst)) {
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)_vpslldq_opx,
+                       IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                       IARG_UINT32, REG_INDX(reg_dst),
+                       IARG_UINT32, REG_INDX(reg_src),
+                       IARG_UINT32, imm,
+                       IARG_END);
+    } else if (REG_is_ymm(reg_dst)) {
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)_vpslldq_opy,
+                       IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                       IARG_UINT32, REG_INDX(reg_dst),
+                       IARG_UINT32, REG_INDX(reg_src),
+                       IARG_UINT32, imm,
+                       IARG_END);
+    } else {
+        xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+        LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+    }
+}

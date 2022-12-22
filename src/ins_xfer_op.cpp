@@ -4214,3 +4214,365 @@ void ins_vpbroadcastb_op(INS ins) {
         }
     }
 }
+
+void PIN_FAST_ANALYSIS_CALL r2r_combine_all_opl(THREADID tid, uint32_t dst, uint32_t src) {
+    tag_t src_tags[] = R32TAG(src);
+    tag_t combined_tag;
+
+    for (size_t i = 0; i < 4; i++) {
+        combined_tag = tag_combine(combined_tag, src_tags[i]);
+    }
+
+    for (size_t i = 0; i < 4; i++) {
+        RTAG[dst][i] = combined_tag;
+    }
+}
+
+void PIN_FAST_ANALYSIS_CALL r2r_combine_all_opq(THREADID tid, uint32_t dst, uint32_t src) {
+    tag_t src_tags[] = R64TAG(src);
+    tag_t combined_tag;
+
+    for (size_t i = 0; i < 8; i++) {
+        combined_tag = tag_combine(combined_tag, src_tags[i]);
+    }
+
+    for (size_t i = 0; i < 8; i++) {
+        RTAG[dst][i] = combined_tag;
+    }
+}
+
+void PIN_FAST_ANALYSIS_CALL r2r_combine_all_opx(THREADID tid, uint32_t dst, uint32_t src) {
+    tag_t src_tags[] = R128TAG(src);
+    tag_t combined_tag;
+
+    for (size_t i = 0; i < 16; i++) {
+        combined_tag = tag_combine(combined_tag, src_tags[i]);
+    }
+
+    for (size_t i = 0; i < 16; i++) {
+        RTAG[dst][i] = combined_tag;
+    }
+}
+
+void PIN_FAST_ANALYSIS_CALL r2r_combine_all_opy(THREADID tid, uint32_t dst, uint32_t src) {
+    tag_t src_tags[] = R256TAG(src);
+    tag_t combined_tag;
+
+    for (size_t i = 0; i < 32; i++) {
+        combined_tag = tag_combine(combined_tag, src_tags[i]);
+    }
+
+    for (size_t i = 0; i < 32; i++) {
+        RTAG[dst][i] = combined_tag;
+    }
+}
+
+void PIN_FAST_ANALYSIS_CALL m2r_combine_all_opl(THREADID tid, uint32_t dst, ADDRINT src) {
+    tag_t src_tags[] = M32TAG(src);
+    tag_t combined_tag;
+
+    for (size_t i = 0; i < 4; i++) {
+        combined_tag = tag_combine(combined_tag, src_tags[i]);
+    }
+
+    for (size_t i = 0; i < 4; i++) {
+        RTAG[dst][i] = combined_tag;
+    }
+}
+
+void PIN_FAST_ANALYSIS_CALL m2r_combine_all_opq(THREADID tid, uint32_t dst, ADDRINT src) {
+    tag_t src_tags[] = M64TAG(src);
+    tag_t combined_tag;
+
+    for (size_t i = 0; i < 8; i++) {
+        combined_tag = tag_combine(combined_tag, src_tags[i]);
+    }
+
+    for (size_t i = 0; i < 8; i++) {
+        RTAG[dst][i] = combined_tag;
+    }
+}
+
+void PIN_FAST_ANALYSIS_CALL m2r_combine_all_opx(THREADID tid, uint32_t dst, ADDRINT src) {
+    tag_t src_tags[] = M128TAG(src);
+    tag_t combined_tag;
+
+    for (size_t i = 0; i < 16; i++) {
+        combined_tag = tag_combine(combined_tag, src_tags[i]);
+    }
+
+    for (size_t i = 0; i < 16; i++) {
+        RTAG[dst][i] = combined_tag;
+    }
+}
+
+void PIN_FAST_ANALYSIS_CALL m2r_combine_all_opy(THREADID tid, uint32_t dst, ADDRINT src) {
+    tag_t src_tags[] = M256TAG(src);
+    tag_t combined_tag;
+
+    for (size_t i = 0; i < 32; i++) {
+        combined_tag = tag_combine(combined_tag, src_tags[i]);
+    }
+
+    for (size_t i = 0; i < 32; i++) {
+        RTAG[dst][i] = combined_tag;
+    }
+}
+
+void ins_combine_all_bytes(INS ins) {
+    REG reg_dst = INS_OperandReg(ins, OP_0);
+    if (INS_OperandIsMemory(ins, OP_1)) {
+        if (REG_is_gr32(reg_dst)) {
+            M2R_CALL(m2r_combine_all_opl, reg_dst);
+        } else if (REG_is_gr64(reg_dst)) {
+            M2R_CALL(m2r_combine_all_opq, reg_dst);
+        } else if (REG_is_xmm(reg_dst)) {
+            M2R_CALL(m2r_combine_all_opx, reg_dst);
+        } else if (REG_is_ymm(reg_dst)) {
+            M2R_CALL(m2r_combine_all_opy, reg_dst);
+        } else {
+            xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+            LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+        }
+    } else {
+        REG reg_src = INS_OperandReg(ins, OP_1);
+        if (REG_is_gr32(reg_dst)) {
+            R2R_CALL(r2r_combine_all_opl, reg_dst, reg_src);
+        } else if (REG_is_gr64(reg_dst)) {
+            R2R_CALL(r2r_combine_all_opq, reg_dst, reg_src);
+        } else if (REG_is_xmm(reg_dst)) {
+            R2R_CALL(r2r_combine_all_opx, reg_dst, reg_src);
+        } else if (REG_is_ymm(reg_dst)) {
+            R2R_CALL(r2r_combine_all_opy, reg_dst, reg_src);
+        } else {
+            xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+            LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+        }
+    }
+}
+
+void PIN_FAST_ANALYSIS_CALL r2r_combine_allinone_opw(THREADID tid, uint32_t dst, uint32_t src) {
+    tag_t src_tag[] = R16TAG(src);
+    tag_t dst_tag[] = R16TAG(dst);
+
+    tag_t combined_src_tag = tag_traits<tag_t>::cleared_val;
+    for (size_t i = 0; i < 2; ++i) {
+        combined_src_tag = tag_combine(combined_src_tag, src_tag[i]);
+    }
+
+    tag_t combined_dst_tag = tag_traits<tag_t>::cleared_val;
+    for (size_t i = 0; i < 2; ++i) {
+        combined_dst_tag = tag_combine(combined_dst_tag, dst_tag[i]);
+    }
+
+    for (size_t i = 0; i < 2; ++i) {
+        RTAG[dst][i] = tag_combine(combined_src_tag, combined_dst_tag);
+    }    
+}
+
+void PIN_FAST_ANALYSIS_CALL r2r_combine_allinone_opl(THREADID tid, uint32_t dst, uint32_t src) {
+    tag_t src_tag[] = R32TAG(src);
+    tag_t dst_tag[] = R32TAG(dst);
+
+    tag_t combined_src_tag = tag_traits<tag_t>::cleared_val;
+    for (size_t i = 0; i < 4; ++i) {
+        combined_src_tag = tag_combine(combined_src_tag, src_tag[i]);
+    }
+
+    tag_t combined_dst_tag = tag_traits<tag_t>::cleared_val;
+    for (size_t i = 0; i < 4; ++i) {
+        combined_dst_tag = tag_combine(combined_dst_tag, dst_tag[i]);
+    }
+
+    for (size_t i = 0; i < 4; ++i) {
+        RTAG[dst][i] = tag_combine(combined_src_tag, combined_dst_tag);
+    }
+}    
+
+void PIN_FAST_ANALYSIS_CALL r2r_combine_allinone_opq(THREADID tid, uint32_t dst, uint32_t src) {
+    tag_t src_tag[] = R64TAG(src);
+    tag_t dst_tag[] = R64TAG(dst);
+
+    tag_t combined_src_tag = tag_traits<tag_t>::cleared_val;
+    for (size_t i = 0; i < 8; ++i) {
+        combined_src_tag = tag_combine(combined_src_tag, src_tag[i]);
+    }
+
+    tag_t combined_dst_tag = tag_traits<tag_t>::cleared_val;
+    for (size_t i = 0; i < 8; ++i) {
+        combined_dst_tag = tag_combine(combined_dst_tag, dst_tag[i]);
+    }
+
+    for (size_t i = 0; i < 8; ++i) {
+        RTAG[dst][i] = tag_combine(combined_src_tag, combined_dst_tag);
+    }
+}
+
+void PIN_FAST_ANALYSIS_CALL r2r_combine_allinone_opx(THREADID tid, uint32_t dst, uint32_t src) {
+    tag_t src_tag[] = R128TAG(src);
+    tag_t dst_tag[] = R128TAG(dst);
+
+    tag_t combined_src_tag = tag_traits<tag_t>::cleared_val;
+    for (size_t i = 0; i < 16; ++i) {
+        combined_src_tag = tag_combine(combined_src_tag, src_tag[i]);
+    }
+
+    tag_t combined_dst_tag = tag_traits<tag_t>::cleared_val;
+    for (size_t i = 0; i < 16; ++i) {
+        combined_dst_tag = tag_combine(combined_dst_tag, dst_tag[i]);
+    }
+
+    for (size_t i = 0; i < 16; ++i) {
+        RTAG[dst][i] = tag_combine(combined_src_tag, combined_dst_tag);
+    }
+}
+
+void PIN_FAST_ANALYSIS_CALL r2r_combine_allinone_opy(THREADID tid, uint32_t dst, uint32_t src) {
+    tag_t src_tag[] = R256TAG(src);
+    tag_t dst_tag[] = R256TAG(dst);
+
+    tag_t combined_src_tag = tag_traits<tag_t>::cleared_val;
+    for (size_t i = 0; i < 32; ++i) {
+        combined_src_tag = tag_combine(combined_src_tag, src_tag[i]);
+    }
+
+    tag_t combined_dst_tag = tag_traits<tag_t>::cleared_val;
+    for (size_t i = 0; i < 32; ++i) {
+        combined_dst_tag = tag_combine(combined_dst_tag, dst_tag[i]);
+    }
+
+    for (size_t i = 0; i < 32; ++i) {
+        RTAG[dst][i] = tag_combine(combined_src_tag, combined_dst_tag);
+    }
+}
+
+void PIN_FAST_ANALYSIS_CALL m2r_combine_allinone_opw(THREADID tid, uint32_t dst, ADDRINT src) {
+    tag_t src_tag[] = M16TAG(src);
+    tag_t dst_tag[] = M16TAG(dst);
+
+    tag_t combined_src_tag = tag_traits<tag_t>::cleared_val;
+    for (size_t i = 0; i < 2; ++i) {
+        combined_src_tag = tag_combine(combined_src_tag, src_tag[i]);
+    }
+
+    tag_t combined_dst_tag = tag_traits<tag_t>::cleared_val;
+    for (size_t i = 0; i < 2; ++i) {
+        combined_dst_tag = tag_combine(combined_dst_tag, dst_tag[i]);
+    }
+
+    for (size_t i = 0; i < 2; ++i) {
+        RTAG[dst][i] = tag_combine(combined_src_tag, combined_dst_tag);
+    }
+}
+
+void PIN_FAST_ANALYSIS_CALL m2r_combine_allinone_opl(THREADID tid, uint32_t dst, ADDRINT src) {
+    tag_t src_tag[] = M32TAG(src);
+    tag_t dst_tag[] = M32TAG(dst);
+
+    tag_t combined_src_tag = tag_traits<tag_t>::cleared_val;
+    for (size_t i = 0; i < 4; ++i) {
+        combined_src_tag = tag_combine(combined_src_tag, src_tag[i]);
+    }
+
+    tag_t combined_dst_tag = tag_traits<tag_t>::cleared_val;
+    for (size_t i = 0; i < 4; ++i) {
+        combined_dst_tag = tag_combine(combined_dst_tag, dst_tag[i]);
+    }
+
+    for (size_t i = 0; i < 4; ++i) {
+        RTAG[dst][i] = tag_combine(combined_src_tag, combined_dst_tag);
+    }
+}
+
+void PIN_FAST_ANALYSIS_CALL m2r_combine_allinone_opq(THREADID tid, uint32_t dst, ADDRINT src) {
+    tag_t src_tag[] = M64TAG(src);
+    tag_t dst_tag[] = M64TAG(dst);
+
+    tag_t combined_src_tag = tag_traits<tag_t>::cleared_val;
+    for (size_t i = 0; i < 8; ++i) {
+        combined_src_tag = tag_combine(combined_src_tag, src_tag[i]);
+    }
+
+    tag_t combined_dst_tag = tag_traits<tag_t>::cleared_val;
+    for (size_t i = 0; i < 8; ++i) {
+        combined_dst_tag = tag_combine(combined_dst_tag, dst_tag[i]);
+    }
+
+    for (size_t i = 0; i < 8; ++i) {
+        RTAG[dst][i] = tag_combine(combined_src_tag, combined_dst_tag);
+    }
+}
+
+void PIN_FAST_ANALYSIS_CALL m2r_combine_allinone_opx(THREADID tid, uint32_t dst, ADDRINT src) {
+    tag_t src_tag[] = M128TAG(src);
+    tag_t dst_tag[] = M128TAG(dst);
+
+    tag_t combined_src_tag = tag_traits<tag_t>::cleared_val;
+    for (size_t i = 0; i < 16; ++i) {
+        combined_src_tag = tag_combine(combined_src_tag, src_tag[i]);
+    }
+
+    tag_t combined_dst_tag = tag_traits<tag_t>::cleared_val;
+    for (size_t i = 0; i < 16; ++i) {
+        combined_dst_tag = tag_combine(combined_dst_tag, dst_tag[i]);
+    }
+
+    for (size_t i = 0; i < 16; ++i) {
+        RTAG[dst][i] = tag_combine(combined_src_tag, combined_dst_tag);
+    }
+}
+
+void PIN_FAST_ANALYSIS_CALL m2r_combine_allinone_opy(THREADID tid, uint32_t dst, ADDRINT src) {
+    tag_t src_tag[] = M256TAG(src);
+    tag_t dst_tag[] = M256TAG(dst);
+
+    tag_t combined_src_tag = tag_traits<tag_t>::cleared_val;
+    for (size_t i = 0; i < 32; ++i) {
+        combined_src_tag = tag_combine(combined_src_tag, src_tag[i]);
+    }
+
+    tag_t combined_dst_tag = tag_traits<tag_t>::cleared_val;
+    for (size_t i = 0; i < 32; ++i) {
+        combined_dst_tag = tag_combine(combined_dst_tag, dst_tag[i]);
+    }
+
+    for (size_t i = 0; i < 32; ++i) {
+        RTAG[dst][i] = tag_combine(combined_src_tag, combined_dst_tag);
+    }
+}
+
+void ins_combine_all_bytes_in_dst(INS ins) {
+    REG reg_dst = INS_OperandReg(ins, OP_0);
+    if (INS_OperandIsMemory(ins, OP_1)) {
+        if (REG_is_gr16(reg_dst)) {
+            M2R_CALL(m2r_combine_allinone_opl, reg_dst);
+        } else if (REG_is_gr32(reg_dst)) {
+            M2R_CALL(m2r_combine_allinone_opl, reg_dst);
+        } else if (REG_is_gr64(reg_dst)) {
+            M2R_CALL(m2r_combine_allinone_opq, reg_dst);
+        } else if (REG_is_xmm(reg_dst)) {
+            M2R_CALL(m2r_combine_allinone_opx, reg_dst);
+        } else if (REG_is_ymm(reg_dst)) {
+            M2R_CALL(m2r_combine_allinone_opy, reg_dst);
+        } else {
+            xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+            LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+        }
+    } else {
+        REG reg_src = INS_OperandReg(ins, OP_1);
+        if (REG_is_gr16(reg_dst)) {
+            R2R_CALL(r2r_combine_allinone_opw, reg_dst, reg_src);
+        } else if (REG_is_gr32(reg_dst)) {
+            R2R_CALL(r2r_combine_allinone_opl, reg_dst, reg_src);
+        } else if (REG_is_gr64(reg_dst)) {
+            R2R_CALL(r2r_combine_allinone_opq, reg_dst, reg_src);
+        } else if (REG_is_xmm(reg_dst)) {
+            R2R_CALL(r2r_combine_allinone_opx, reg_dst, reg_src);
+        } else if (REG_is_ymm(reg_dst)) {
+            R2R_CALL(r2r_combine_allinone_opy, reg_dst, reg_src);
+        } else {
+            xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+            LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+        }
+    }
+}

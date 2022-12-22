@@ -86,4 +86,9 @@ void ins_shl_op(INS ins);
 void ins_shr_op(INS ins);
 
 void ins_vpbroadcastb_op(INS ins);
+
+// These are totally overtainting and should only be used for debugging!
+void ins_combine_all_bytes(INS ins);
+void ins_combine_all_bytes_in_dst(INS ins);
+
 #endif

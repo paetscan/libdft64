@@ -10,4 +10,6 @@ void ins_clear_ternary_op(INS ins);
 void ins_pminub_op(INS ins);
 void ins_vpminub_op(INS ins);
 
+void ins_pmovmskb_op(INS ins);
+
 #endif

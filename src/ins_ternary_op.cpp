@@ -450,3 +450,73 @@ void ins_vpminub_op(INS ins) {
         }
     }
 }
+
+void _pmovmskb_r2r_opq(THREADID tid, uint32_t dst, uint32_t src) {
+    tag_t src_tag = RTAG[src][0];
+    for (size_t i = 1; i < 8; i++) {
+        tag_combine(src_tag, RTAG[src][i]);
+    }
+
+    RTAG[dst][0] = src_tag;
+
+    for (size_t i = 1; i < 8; i++) {
+        RTAG[dst][i] = tag_traits<lb_type>::cleared_val;
+    }
+}
+
+void _pmovmskb_r2r_opx(THREADID tid, uint32_t dst, uint32_t src) {
+    tag_t src_tag = RTAG[src][0];
+    for (size_t i = 1; i < 16; i++) {
+        tag_combine(src_tag, RTAG[src][i]);
+    }
+
+    for (size_t i = 0; i < 2; i++) {
+        RTAG[dst][i] = src_tag;
+    }
+
+    for (size_t i = 2; i < 8; i++) {
+        RTAG[dst][i] = tag_traits<lb_type>::cleared_val;
+    }
+}
+
+void _pmovmskb_r2r_opy(THREADID tid, uint32_t dst, uint32_t src) {
+    tag_t src_tag = RTAG[src][0];
+    for (size_t i = 1; i < 32; i++) {
+        tag_combine(src_tag, RTAG[src][i]);
+    }
+
+    for (size_t i = 0; i < 4; i++) {
+        RTAG[dst][i] = src_tag;
+    }
+
+    for (size_t i = 4; i < 8; i++) {
+        RTAG[dst][i] = tag_traits<lb_type>::cleared_val;
+    }
+}
+
+void ins_pmovmskb_op(INS ins) {
+    REG reg_dst = INS_OperandReg(ins, OP_0);
+    REG reg_src = INS_OperandReg(ins, OP_1);
+    if (REG_is_mm(reg_src)) {
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)_pmovmskb_r2r_opq,
+                       IARG_THREAD_ID,
+                       IARG_UINT32, REG_INDX(reg_dst),
+                       IARG_UINT32, REG_INDX(reg_src),
+                       IARG_END);
+    } else if (REG_is_xmm(reg_src)) {
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)_pmovmskb_r2r_opx,
+                       IARG_THREAD_ID,
+                       IARG_UINT32, REG_INDX(reg_dst),
+                       IARG_UINT32, REG_INDX(reg_src),
+                       IARG_END);
+    } else if (REG_is_ymm(reg_src)) {
+        INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)_pmovmskb_r2r_opy,
+                       IARG_THREAD_ID,
+                       IARG_UINT32, REG_INDX(reg_dst),
+                       IARG_UINT32, REG_INDX(reg_src),
+                       IARG_END);
+    } else {
+        xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+        LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+    }
+}

@@ -71,4 +71,7 @@ void ins_vpsrldq_op(INS ins);
 
 void ins_psllx_op(INS ins, uint32_t chunkSize);
 void ins_vpsllx_op(INS ins, uint32_t chunkSize);
+
+void ins_psrlx_op(INS ins, uint32_t chunkSize);
+void ins_vpsrlx_op(INS ins, uint32_t chunkSize);
 #endif

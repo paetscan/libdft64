@@ -1262,3 +1262,179 @@ void ins_vpunpckhqdq_op(INS ins) {
         }
     }
 }
+
+static void PIN_FAST_ANALYSIS_CALL r2r_pshufd_op(THREADID tid, uint32_t reg_dst, uint32_t reg_src, uint32_t imm, uint32_t byteCount, uint32_t chunkSize, bool isVex128) {
+    tag_t src_tags[byteCount];
+    for (size_t i = 0; i < byteCount; i++) {
+        src_tags[i] = RTAG[reg_src][i];
+    }
+
+    size_t choice0 = imm & 0x3; // imm[1:0]
+    size_t choice1 = (imm & 0xc) >> 2; // imm[3:2]
+    size_t choice2 = (imm & 0x30) >> 4; // imm[5:4]
+    size_t choice3 = (imm & 0xc0) >> 6; // imm[7:6]
+
+    for (size_t i = 0; i < chunkSize; ++i)
+    {
+        RTAG[reg_dst][i] = src_tags[i + (choice0 * chunkSize)];
+        RTAG[reg_dst][i + 4] = src_tags[i + (choice1 * chunkSize)];
+        RTAG[reg_dst][i + 8] = src_tags[i + (choice2 * chunkSize)];
+        RTAG[reg_dst][i + 12] = src_tags[i + (choice3 * chunkSize)];
+    }
+
+    if (isVex128)
+    {
+        for (size_t i = 16; i < 32; ++i)
+        {
+            RTAG[reg_dst][i] = tag_traits<tag_t>::cleared_val;
+        }
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL m2r_pshufd_op(THREADID tid, uint32_t reg_dst, uint64_t addr, uint32_t imm, uint32_t byteCount, uint32_t chunkSize, bool isVex128) {
+    tag_t src_tags[byteCount];
+    for (size_t i = 0; i < byteCount; i++) {
+        src_tags[i] = MTAG(addr + i);
+    }
+
+    size_t choice0 = imm & 0x3; // imm[1:0]
+    size_t choice1 = (imm & 0xc) >> 2; // imm[3:2]
+    size_t choice2 = (imm & 0x30) >> 4; // imm[5:4]
+    size_t choice3 = (imm & 0xc0) >> 6; // imm[7:6]
+
+    for (size_t i = 0; i < chunkSize; ++i)
+    {
+        RTAG[reg_dst][i] = src_tags[i + (choice0 * chunkSize)];
+        RTAG[reg_dst][i + 4] = src_tags[i + (choice1 * chunkSize)];
+        RTAG[reg_dst][i + 8] = src_tags[i + (choice2 * chunkSize)];
+        RTAG[reg_dst][i + 12] = src_tags[i + (choice3 * chunkSize)];
+    }
+
+    if (isVex128)
+    {
+        for (size_t i = 16; i < 32; ++i)
+        {
+            RTAG[reg_dst][i] = tag_traits<tag_t>::cleared_val;
+        }
+    }
+}
+
+void ins_pshufd_op(INS ins) {
+    REG reg_dst, reg_src;
+    uint32_t imm = INS_OperandImmediate(ins, OP_2) & 0xff;
+    uint32_t chunkSize = 4;
+    if (INS_OperandIsMemory(ins, OP_1)) {
+        reg_dst = INS_OperandReg(ins, OP_0);
+        if (REG_is_xmm(reg_dst)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m2r_pshufd_op,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_MEMORYREAD_EA,
+                           IARG_UINT32, imm,
+                           IARG_UINT32, 16,
+                           IARG_UINT32, chunkSize,
+                           IARG_BOOL, false,
+                           IARG_END);
+        } else if (REG_is_ymm(reg_dst)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m2r_pshufd_op,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_MEMORYREAD_EA,
+                           IARG_UINT32, imm,
+                           IARG_UINT32, 32,
+                           IARG_UINT32, chunkSize,
+                           IARG_BOOL, false,
+                           IARG_END);
+        } else {
+            xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+            LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+        }
+    } else {
+        reg_dst = INS_OperandReg(ins, OP_0);
+        reg_src = INS_OperandReg(ins, OP_1);
+        if (REG_is_xmm(reg_dst)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2r_pshufd_op,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_UINT32, REG_INDX(reg_src),
+                           IARG_UINT32, imm,
+                           IARG_UINT32, 16,
+                           IARG_UINT32, chunkSize,
+                           IARG_BOOL, false,
+                           IARG_END);
+        } else if (REG_is_ymm(reg_dst)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2r_pshufd_op,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_UINT32, REG_INDX(reg_src),
+                           IARG_UINT32, imm,
+                           IARG_UINT32, 32,
+                           IARG_UINT32, chunkSize,
+                           IARG_BOOL, false,
+                           IARG_END);
+        } else {
+            xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+            LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+        }
+    }
+}
+
+void ins_vpshufd_op(INS ins) {
+    REG reg_dst, reg_src;
+    uint32_t imm = INS_OperandImmediate(ins, OP_2) & 0xff;
+    uint32_t chunkSize = 4;
+    if (INS_OperandIsMemory(ins, OP_1)) {
+        reg_dst = INS_OperandReg(ins, OP_0);
+        if (REG_is_xmm(reg_dst)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m2r_pshufd_op,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_MEMORYREAD_EA,
+                           IARG_UINT32, imm,
+                           IARG_UINT32, 16,
+                           IARG_UINT32, chunkSize,
+                           IARG_BOOL, true,
+                           IARG_END);
+        } else if (REG_is_ymm(reg_dst)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m2r_pshufd_op,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_MEMORYREAD_EA,
+                           IARG_UINT32, imm,
+                           IARG_UINT32, 32,
+                           IARG_UINT32, chunkSize,
+                           IARG_BOOL, false,
+                           IARG_END);
+        } else {
+            xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+            LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+        }
+    } else {
+        reg_dst = INS_OperandReg(ins, OP_0);
+        reg_src = INS_OperandReg(ins, OP_1);
+        if (REG_is_xmm(reg_dst)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2r_pshufd_op,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_UINT32, REG_INDX(reg_src),
+                           IARG_UINT32, imm,
+                           IARG_UINT32, 16,
+                           IARG_UINT32, chunkSize,
+                           IARG_BOOL, true,
+                           IARG_END);
+        } else if (REG_is_ymm(reg_dst)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2r_pshufd_op,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_UINT32, REG_INDX(reg_src),
+                           IARG_UINT32, imm,
+                           IARG_UINT32, 32,
+                           IARG_UINT32, chunkSize,
+                           IARG_BOOL, false,
+                           IARG_END);
+        } else {
+            xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+            LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+        }
+    }
+}

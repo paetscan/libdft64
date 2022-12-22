@@ -84,4 +84,6 @@ void ins_rorx_ins(INS ins);
 void ins_rcr_op(INS ins);
 void ins_shl_op(INS ins);
 void ins_shr_op(INS ins);
+
+void ins_vpbroadcastb_op(INS ins);
 #endif

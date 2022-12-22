@@ -4160,3 +4160,57 @@ void ins_rorx_ins(INS ins) {
         LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
     }
 }
+
+void PIN_FAST_ANALYSIS_CALL r2r_vpbroadcastb_opx(THREADID tid, uint32_t dst, uint32_t src) {
+    for (size_t i = 0; i < 16; i++) {
+        RTAG[dst][i] = RTAG[src][0];
+    }
+}
+
+void PIN_FAST_ANALYSIS_CALL r2r_vpbroadcastb_opy(THREADID tid, uint32_t dst, uint32_t src) {
+    for (size_t i = 0; i < 32; i++) {
+        RTAG[dst][i] = RTAG[src][0];
+    }
+}
+
+void PIN_FAST_ANALYSIS_CALL m2r_vpbroadcastb_opx(THREADID tid, uint32_t dst, ADDRINT src) {
+    tag_t src_tag = MTAG(src);
+
+    for (size_t i = 0; i < 16; i++) {
+        RTAG[dst][i] = src_tag;
+    }
+}
+
+void PIN_FAST_ANALYSIS_CALL m2r_vpbroadcastb_opy(THREADID tid, uint32_t dst, ADDRINT src) {
+    tag_t src_tag = MTAG(src);
+
+    for (size_t i = 0; i < 32; i++) {
+        RTAG[dst][i] = src_tag;
+    }
+}
+
+void ins_vpbroadcastb_op(INS ins) {
+    REG reg_dst, reg_src;
+    if (INS_OperandIsMemory(ins, OP_1)) {
+        reg_dst = INS_OperandReg(ins, OP_0);
+        if (REG_is_xmm(reg_dst)) {
+            R_CALL(m2r_vpbroadcastb_opx, reg_dst);
+        } else if (REG_is_ymm(reg_dst)) {
+            R_CALL(m2r_vpbroadcastb_opy, reg_dst);
+        } else {
+            xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+            LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+        }
+    } else {
+        reg_dst = INS_OperandReg(ins, OP_0);
+        reg_src = INS_OperandReg(ins, OP_1);
+        if (REG_is_xmm(reg_dst)) {
+            R2R_CALL(r2r_vpbroadcastb_opx, reg_dst, reg_src);
+        } else if (REG_is_ymm(reg_dst)) {
+            R2R_CALL(r2r_vpbroadcastb_opy, reg_dst, reg_src);
+        } else {
+            xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+            LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+        }
+    }
+}

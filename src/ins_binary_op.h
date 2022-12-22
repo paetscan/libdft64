@@ -4,4 +4,6 @@
 
 void ins_binary_op(INS ins);
 
+void ins_padd_op(INS ins);
+
 #endif

@@ -24,7 +24,7 @@ static void PIN_FAST_ANALYSIS_CALL _movsx_r2r_opwb_u(THREADID tid, uint32_t dst,
   tag_t *rtag_dst = RTAG[dst];
 
   /* update the destination (xfer) */
-  rtag_dst[0] = src_tag;
+  rtag_dst[0] = tag_traits<tag_t>::cleared_val;
   rtag_dst[1] = src_tag;
 }
 
@@ -36,7 +36,7 @@ static void PIN_FAST_ANALYSIS_CALL _movsx_r2r_opwb_l(THREADID tid, uint32_t dst,
 
   /* update the destination (xfer) */
   rtag_dst[0] = src_tag;
-  rtag_dst[1] = src_tag;
+  rtag_dst[1] = tag_traits<tag_t>::cleared_val;
 }
 
 static void PIN_FAST_ANALYSIS_CALL _movsx_r2r_oplb_u(THREADID tid, uint32_t dst,
@@ -46,8 +46,10 @@ static void PIN_FAST_ANALYSIS_CALL _movsx_r2r_oplb_u(THREADID tid, uint32_t dst,
   tag_t *rtag_dst = RTAG[dst];
 
   /* update the destination (xfer) */
-  for (size_t i = 0; i < 4; i++)
-    rtag_dst[i] = src_tag;
+  rtag_dst[0] = tag_traits<tag_t>::cleared_val;
+  rtag_dst[1] = src_tag;
+  for (size_t i = 2; i < 4; i++)
+    rtag_dst[i] = tag_traits<tag_t>::cleared_val;
 }
 
 static void PIN_FAST_ANALYSIS_CALL _movsx_r2r_oplb_l(THREADID tid, uint32_t dst,
@@ -57,8 +59,9 @@ static void PIN_FAST_ANALYSIS_CALL _movsx_r2r_oplb_l(THREADID tid, uint32_t dst,
   tag_t *rtag_dst = RTAG[dst];
 
   /* update the destination (xfer) */
-  for (size_t i = 0; i < 4; i++)
-    rtag_dst[i] = src_tag;
+  rtag_dst[0] = src_tag;
+  for (size_t i = 1; i < 4; i++)
+    rtag_dst[i] = tag_traits<tag_t>::cleared_val;
 }
 
 static void PIN_FAST_ANALYSIS_CALL _movsx_r2r_opqb_u(THREADID tid, uint32_t dst,
@@ -68,8 +71,10 @@ static void PIN_FAST_ANALYSIS_CALL _movsx_r2r_opqb_u(THREADID tid, uint32_t dst,
   tag_t *rtag_dst = RTAG[dst];
 
   /* update the destination (xfer) */
-  for (size_t i = 0; i < 8; i++)
-    rtag_dst[i] = src_tag;
+  rtag_dst[0] = tag_traits<tag_t>::cleared_val;
+  rtag_dst[1] = src_tag;
+  for (size_t i = 2; i < 8; i++)
+    rtag_dst[i] = tag_traits<tag_t>::cleared_val;
 }
 
 static void PIN_FAST_ANALYSIS_CALL _movsx_r2r_opqb_l(THREADID tid, uint32_t dst,
@@ -79,8 +84,9 @@ static void PIN_FAST_ANALYSIS_CALL _movsx_r2r_opqb_l(THREADID tid, uint32_t dst,
   tag_t *rtag_dst = RTAG[dst];
 
   /* update the destination (xfer) */
-  for (size_t i = 0; i < 8; i++)
-    rtag_dst[i] = src_tag;
+  rtag_dst[0] = src_tag;
+  for (size_t i = 1; i < 8; i++)
+    rtag_dst[i] = tag_traits<tag_t>::cleared_val;
 }
 
 static void PIN_FAST_ANALYSIS_CALL _movsx_r2r_oplw(THREADID tid, uint32_t dst,
@@ -90,8 +96,10 @@ static void PIN_FAST_ANALYSIS_CALL _movsx_r2r_oplw(THREADID tid, uint32_t dst,
   tag_t *rtag_dst = RTAG[dst];
 
   /* update the destination (xfer) */
-  for (size_t i = 0; i < 4; i++)
-    rtag_dst[i] = rtag_src[i % 2];
+  rtag_dst[0] = rtag_src[0];
+  rtag_dst[1] = rtag_src[1];
+  for (size_t i = 2; i < 4; i++)
+    rtag_dst[i] = tag_traits<tag_t>::cleared_val;
 }
 
 static void PIN_FAST_ANALYSIS_CALL _movsx_r2r_opqw(THREADID tid, uint32_t dst,
@@ -101,8 +109,10 @@ static void PIN_FAST_ANALYSIS_CALL _movsx_r2r_opqw(THREADID tid, uint32_t dst,
   tag_t *rtag_dst = RTAG[dst];
 
   /* update the destination (xfer) */
-  for (size_t i = 0; i < 8; i++)
-    rtag_dst[i] = rtag_src[i % 2];
+  rtag_dst[0] = rtag_src[0];
+  rtag_dst[1] = rtag_src[1];
+  for (size_t i = 2; i < 8; i++)
+    rtag_dst[i] = tag_traits<tag_t>::cleared_val;
 }
 
 static void PIN_FAST_ANALYSIS_CALL _movsx_r2r_opql(THREADID tid, uint32_t dst,
@@ -124,7 +134,7 @@ static void PIN_FAST_ANALYSIS_CALL _movsx_m2r_opwb(THREADID tid, uint32_t dst,
 
   /* update the destination (xfer) */
   rtag_dst[0] = src_tag;
-  rtag_dst[1] = src_tag;
+  rtag_dst[1] = tag_traits<tag_t>::cleared_val;
 }
 
 static void PIN_FAST_ANALYSIS_CALL _movsx_m2r_oplb(THREADID tid, uint32_t dst,
@@ -134,8 +144,9 @@ static void PIN_FAST_ANALYSIS_CALL _movsx_m2r_oplb(THREADID tid, uint32_t dst,
   tag_t *rtag_dst = RTAG[dst];
 
   /* update the destination (xfer) */
-  for (size_t i = 0; i < 4; i++)
-    rtag_dst[i] = src_tag;
+  rtag_dst[0] = src_tag;
+  for (size_t i = 1; i < 4; i++)
+    rtag_dst[i] = tag_traits<tag_t>::cleared_val;
 }
 
 static void PIN_FAST_ANALYSIS_CALL _movsx_m2r_opqb(THREADID tid, uint32_t dst,
@@ -145,8 +156,9 @@ static void PIN_FAST_ANALYSIS_CALL _movsx_m2r_opqb(THREADID tid, uint32_t dst,
   tag_t *rtag_dst = RTAG[dst];
 
   /* update the destination (xfer) */
-  for (size_t i = 0; i < 8; i++)
-    rtag_dst[i] = src_tag;
+  rtag_dst[0] = src_tag;
+  for (size_t i = 1; i < 8; i++)
+    rtag_dst[i] = tag_traits<tag_t>::cleared_val;
 }
 
 static void PIN_FAST_ANALYSIS_CALL _movsx_m2r_oplw(THREADID tid, uint32_t dst,
@@ -156,8 +168,10 @@ static void PIN_FAST_ANALYSIS_CALL _movsx_m2r_oplw(THREADID tid, uint32_t dst,
   tag_t *rtag_dst = RTAG[dst];
 
   /* update the destination (xfer) */
-  for (size_t i = 0; i < 4; i++)
-    rtag_dst[i] = src_tags[i % 2];
+  rtag_dst[0] = src_tags[0];
+  rtag_dst[1] = src_tags[1];
+  for (size_t i = 2; i < 4; i++)
+    rtag_dst[i] = tag_traits<tag_t>::cleared_val;
 }
 
 static void PIN_FAST_ANALYSIS_CALL _movsx_m2r_opqw(THREADID tid, uint32_t dst,
@@ -167,8 +181,10 @@ static void PIN_FAST_ANALYSIS_CALL _movsx_m2r_opqw(THREADID tid, uint32_t dst,
   tag_t *rtag_dst = RTAG[dst];
 
   /* update the destination (xfer) */
-  for (size_t i = 0; i < 8; i++)
-    rtag_dst[i] = src_tags[i % 2];
+  rtag_dst[0] = src_tags[0];
+  rtag_dst[1] = src_tags[1];
+  for (size_t i = 2; i < 8; i++)
+    rtag_dst[i] = tag_traits<tag_t>::cleared_val;
 }
 
 static void PIN_FAST_ANALYSIS_CALL _movsx_m2r_opql(THREADID tid, uint32_t dst,

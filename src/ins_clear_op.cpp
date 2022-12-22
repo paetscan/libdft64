@@ -113,3 +113,22 @@ void ins_clear_op_l4(INS ins) {
   INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_clrl4, IARG_FAST_ANALYSIS_CALL,
                  IARG_THREAD_ID, IARG_END);
 }
+
+VOID clear_ymm_upper(THREADID tid)
+{
+    // YMM upper bytes are from DFT_REGs 19 - 34 (XMM0 - XMM15)
+    // Iterate over all registers and clear the taint of the upper 128 bits
+    for (int i = 19; i < 35; ++i)
+    {
+        for (size_t j = 16; j < 32; ++j)
+        {
+            RTAG[i][j] = tag_traits<tag_t>::cleared_val;
+        }
+    }
+}
+
+
+void ins_vzeroupper_op(INS ins)
+{
+    INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)clear_ymm_upper, IARG_THREAD_ID, IARG_END);
+}

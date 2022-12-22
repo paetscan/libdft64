@@ -65,4 +65,7 @@ void ins_vpshufd_op(INS ins);
 
 void ins_pslldq_op(INS ins);
 void ins_vpslldq_op(INS ins);
+
+void ins_psrldq_op(INS ins);
+void ins_vpsrldq_op(INS ins);
 #endif

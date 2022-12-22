@@ -50,4 +50,13 @@ void ins_movhp(INS ins);
 void ins_lea(INS ins);
 void ins_movbe_op(INS ins);
 
+void ins_punpcklbw_op(INS ins);
+void ins_punpcklwd_op(INS ins);
+void ins_punpckldq_op(INS ins);
+void ins_punpcklqdq_op(INS ins);
+void ins_punpckhbw_op(INS ins);
+void ins_punpckhwd_op(INS ins);
+void ins_punpckhdq_op(INS ins);
+void ins_punpckhqdq_op(INS ins);
+void ins_vpunpckhqdq_op(INS ins);
 #endif

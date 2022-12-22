@@ -74,4 +74,14 @@ void ins_vpsllx_op(INS ins, uint32_t chunkSize);
 
 void ins_psrlx_op(INS ins, uint32_t chunkSize);
 void ins_vpsrlx_op(INS ins, uint32_t chunkSize);
+
+void ins_shld_op(INS ins);
+void ins_shrd_op(INS ins);
+void ins_rol_op(INS ins);
+void ins_rcl_op(INS ins);
+void ins_ror_op(INS ins);
+void ins_rorx_ins(INS ins);
+void ins_rcr_op(INS ins);
+void ins_shl_op(INS ins);
+void ins_shr_op(INS ins);
 #endif

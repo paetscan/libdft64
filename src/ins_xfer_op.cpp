@@ -2205,3 +2205,1958 @@ void ins_vpsrlx_op(INS ins, uint32_t chunkSize) {
         LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
     }
 }
+
+static void PIN_FAST_ANALYSIS_CALL r2r_shld_op(THREADID tid, uint32_t reg_src, uint32_t reg_dst, uint32_t imm, uint32_t byteCount) {
+    if (imm == 0) {
+        return;
+    }
+
+    tag_t src_tags[byteCount];
+    tag_t dst_tags[byteCount];
+
+    for (size_t i = 0; i < byteCount; i++) {
+        src_tags[i] = RTAG[reg_src][i];
+        dst_tags[i] = RTAG[reg_dst][i];
+    }
+
+    // Calculate bytewise taint from bitwise shift
+    auto res = std::div(imm, 8);
+    // If the bitshift uses whole bytes
+    // The whole bytes can be copied from src
+    for (size_t i = 0; i < (uint32_t)res.quot; i++) {
+        RTAG[reg_dst][i] = src_tags[i];
+    }
+    if (res.rem == 0) {
+        // Shift the dst values
+        for (size_t i = res.quot; i < byteCount; i++) {
+            RTAG[reg_dst][i] = dst_tags[i - res.quot];
+        }
+    } else { // We need to combine taint from bytes
+        // The rest has to be combined
+        RTAG[reg_dst][res.quot] = src_tags[0];
+        for (size_t i = res.quot + 1; i < byteCount; i++) {
+            RTAG[reg_dst][i] = tag_combine(dst_tags[i - res.quot], dst_tags[i - res.quot - 1]);
+        }
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL r2r_reg_shld_op(THREADID tid, uint32_t reg_src, uint32_t reg_dst, uint8_t *reg_cnt, uint32_t byteCount) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+
+    r2r_shld_op(tid, reg_src, reg_dst, imm, byteCount);
+}
+
+static void PIN_FAST_ANALYSIS_CALL r2m_shld_op(THREADID tid, uint32_t reg_src, uint64_t addr, uint32_t imm, uint32_t byteCount) {
+    if (imm == 0) {
+        return;
+    }
+
+    tag_t src_tags[byteCount];
+    tag_t dst_tags[byteCount];
+
+    for (size_t i = 0; i < byteCount; i++) {
+        src_tags[i] = RTAG[reg_src][i];
+        dst_tags[i] = MTAG(addr + i);
+    }
+
+    // Calculate bytewise taint from bitwise shift
+    auto res = std::div(imm, 8);
+    // If the bitshift uses whole bytes
+    // The whole bytes can be copied from src
+    for (size_t i = 0; i < (uint32_t)res.quot; i++) {
+        tagmap_setb(addr + i, src_tags[i]);
+    }
+    if (res.rem == 0) {
+        // Shift the dst values
+        for (size_t i = res.quot; i < byteCount; i++) {
+            tagmap_setb(addr + i, dst_tags[i - res.quot]);
+        }
+    } else { // We need to combine taint from bytes
+        // The rest has to be combined
+        tagmap_setb(addr + res.quot, src_tags[0]);
+        for (size_t i = res.quot + 1; i < byteCount; i++) {
+            tagmap_setb(addr + i, tag_combine(dst_tags[i - res.quot], dst_tags[i - res.quot - 1]));
+        }
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL r2m_reg_shld_op(THREADID tid, uint32_t reg_src, uint64_t addr, uint8_t *reg_cnt, uint32_t byteCount) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+
+    r2m_shld_op(tid, reg_src, addr, imm, byteCount);
+}
+
+void ins_shld_op(INS ins) {
+    REG reg_src = INS_OperandReg(ins, OP_1);
+    if (INS_OperandIsImmediate(ins, OP_2)) {
+        UINT32 imm = INS_OperandImmediate(ins, OP_2);
+
+        if (INS_MemoryOperandCount(ins) == 0) {
+            REG reg_dst = INS_OperandReg(ins, OP_0);
+            if (REG_is_gr64(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2r_shld_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (REG_is_gr32(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2r_shld_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (REG_is_gr16(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2r_shld_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 2,
+                               IARG_END);
+            }
+        } else {
+            if (REG_is_gr64(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2m_shld_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (REG_is_gr32(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2m_shld_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (REG_is_gr16(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2r_shld_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 2,
+                               IARG_END);
+            }
+        }
+
+    } else if (REG_is_Lower8(INS_OperandReg(ins, OP_2))) {
+        REG reg_cnt = INS_OperandReg(ins, OP_2);
+
+        if (INS_MemoryOperandCount(ins) == 0) {
+            REG reg_dst = INS_OperandReg(ins, OP_0);
+            if (REG_is_gr64(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2r_reg_shld_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (REG_is_gr32(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2r_reg_shld_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (REG_is_gr16(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2r_reg_shld_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 2,
+                               IARG_END);
+            }
+        } else {
+            if (REG_is_gr64(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2m_reg_shld_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (REG_is_gr32(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2m_reg_shld_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (REG_is_gr16(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2m_reg_shld_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 2,
+                               IARG_END);
+            }
+        }
+
+    } else {
+        xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+        LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+    }
+}
+
+
+static void PIN_FAST_ANALYSIS_CALL r2r_shrd_op(THREADID tid, uint32_t reg_src, uint32_t reg_dst, uint32_t imm, uint32_t byteCount) {
+    if (imm == 0) {
+        return;
+    }
+
+    tag_t src_tags[byteCount];
+    tag_t dst_tags[byteCount];
+
+    for (size_t i = 0; i < byteCount; i++) {
+        src_tags[i] = RTAG[reg_src][i];
+        dst_tags[i] = RTAG[reg_dst][i];
+    }
+
+    // Calculate bytewise taint from bitwise shift
+    auto res = std::div(imm, 8);
+    // If the bitshift uses whole bytes
+    // The whole bytes can be copied from src
+    for (size_t i = byteCount - 1; i >= byteCount - (uint32_t)res.quot; i--) {
+        RTAG[reg_dst][i] = src_tags[i];
+    }
+    if (res.rem == 0) {
+        // Shift the dst values
+        for (size_t i = byteCount - res.quot - 1; i < byteCount; i--) {
+            RTAG[reg_dst][i] = dst_tags[i + res.quot];
+        }
+    } else { // We need to combine taint from bytes
+        // The rest has to be combined
+        RTAG[reg_dst][byteCount - res.quot - 1] = src_tags[byteCount - 1];
+        for (size_t i = byteCount - res.quot - 2; i < byteCount; i--) {
+            RTAG[reg_dst][i] = tag_combine(dst_tags[i + res.quot], dst_tags[i + res.quot + 1]);
+        }
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL r2r_reg_shrd_op(THREADID tid, uint32_t reg_src, uint32_t reg_dst, uint8_t *reg_cnt, uint32_t byteCount) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+
+    r2r_shrd_op(tid, reg_src, reg_dst, imm, byteCount);
+}
+
+static void PIN_FAST_ANALYSIS_CALL r2m_shrd_op(THREADID tid, uint32_t reg_src, uint64_t addr, uint32_t imm, uint32_t byteCount) {
+    if (imm == 0) {
+        return;
+    }
+
+    tag_t src_tags[byteCount];
+    tag_t dst_tags[byteCount];
+
+    for (size_t i = 0; i < byteCount; i++) {
+        src_tags[i] = RTAG[reg_src][i];
+        dst_tags[i] = MTAG(addr + i);
+    }
+
+    // Calculate bytewise taint from bitwise shift
+    auto res = std::div(imm, 8);
+    // If the bitshift uses whole bytes
+    // The whole bytes can be copied from src
+    for (size_t i = byteCount - 1; i >= byteCount - (uint32_t)res.quot; i--) {
+        tagmap_setb(addr + i, src_tags[i]);
+    }
+    if (res.rem == 0) {
+        // Shift the dst values
+        for (size_t i = byteCount - res.quot - 1; i < byteCount; i--) {
+            tagmap_setb(addr + i, dst_tags[i + res.quot]);
+        }
+    } else { // We need to combine taint from bytes
+        // The rest has to be combined
+        tagmap_setb(addr + (byteCount - res.quot - 1), src_tags[byteCount - 1]);
+        for (size_t i = byteCount - res.quot - 2; i < byteCount; i--) {
+            tagmap_setb(addr + i, tag_combine(dst_tags[i + res.quot], dst_tags[i + res.quot + 1]));
+        }
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL r2m_reg_shrd_op(THREADID tid, uint32_t reg_src, uint64_t addr, uint8_t *reg_cnt, uint32_t byteCount) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+
+    r2m_shrd_op(tid, reg_src, addr, imm, byteCount);
+}
+
+void ins_shrd_op(INS ins) {
+    REG reg_src = INS_OperandReg(ins, OP_1);
+    if (INS_OperandIsImmediate(ins, OP_2)) {
+        UINT32 imm = INS_OperandImmediate(ins, OP_2);
+
+        if (INS_MemoryOperandCount(ins) == 0) {
+            REG reg_dst = INS_OperandReg(ins, OP_0);
+            if (REG_is_gr64(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2r_shrd_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (REG_is_gr32(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2r_shrd_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (REG_is_gr16(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2r_shrd_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 2,
+                               IARG_END);
+            }
+        } else {
+            if (REG_is_gr64(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2m_shrd_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (REG_is_gr32(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2m_shrd_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (REG_is_gr16(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2m_shrd_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 2,
+                               IARG_END);
+            }
+        }
+
+    } else if (REG_is_Lower8(INS_OperandReg(ins, OP_2))) {
+        REG reg_cnt = INS_OperandReg(ins, OP_2);
+
+        if (INS_MemoryOperandCount(ins) == 0) {
+            REG reg_dst = INS_OperandReg(ins, OP_0);
+            if (REG_is_gr64(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2r_reg_shrd_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (REG_is_gr32(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2r_reg_shrd_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (REG_is_gr16(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2r_reg_shrd_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 2,
+                               IARG_END);
+            }
+        } else {
+            if (REG_is_gr64(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2m_reg_shrd_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (REG_is_gr32(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2m_reg_shrd_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (REG_is_gr16(reg_src)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2m_reg_shrd_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 2,
+                               IARG_END);
+            }
+        }
+
+    } else {
+        xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+        LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL r_shl_op(THREADID tid, uint32_t reg_dst, uint32_t imm, uint32_t byteCount) {
+    if (imm == 0) {
+        return;
+    }
+
+    tag_t dst_tags[byteCount];
+    for (size_t i = 0; i < byteCount; i++) {
+        dst_tags[i] = RTAG[reg_dst][i];
+    }
+
+    // Calculate bytewise taint from bitwise shift
+    auto res = std::div(imm, 8);
+
+    // Clear all whole bytes
+    for (size_t i = 0; i < (uint32_t)res.quot; i++) {
+        RTAG[reg_dst][i] = tag_traits<tag_t>::cleared_val;
+    }
+
+    // If the bitshift uses whole bytes
+    if (res.rem == 0) {
+        // Shift the tainted values
+        for (size_t i = res.quot; i < byteCount; i++) {
+            RTAG[reg_dst][i] = dst_tags[i - res.quot];
+        }
+    } else { // We need to combine the taint
+        RTAG[reg_dst][res.quot] = dst_tags[0];
+        for (size_t i = res.quot + 1; i < byteCount; i++) {
+            RTAG[reg_dst][i] = tag_combine(dst_tags[i - res.quot], dst_tags[i - res.quot - 1]);
+        }
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL r_shl_op_upper8(THREADID tid, uint32_t reg_dst, uint32_t imm) {
+    if (imm > 7) {
+        RTAG[reg_dst][1] = tag_traits<tag_t>::cleared_val;
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL r_shl_op_lower8(THREADID tid, uint32_t reg_dst, uint32_t imm) {
+    if (imm > 7) {
+        RTAG[reg_dst][0] = tag_traits<tag_t>::cleared_val;
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL m_shl_op(THREADID tid, uint64_t addr, uint32_t imm, uint32_t byteCount) {
+    if (imm == 0) {
+        return;
+    }
+
+    tag_t dst_tags[byteCount];
+    for (size_t i = 0; i < byteCount; i++) {
+        dst_tags[i] = MTAG(addr + i);
+    }
+
+    // Calculate bytewise taint from bitwise shift
+    auto res = std::div(imm, 8);
+
+    // Clear all whole bytes
+    for (size_t i = 0; i < (uint32_t)res.quot; i++) {
+        tagmap_setb(addr + i, tag_traits<tag_t>::cleared_val);
+    }
+
+    // If the bitshift uses whole bytes
+    if (res.rem == 0) {
+        // Shift the tainted values
+        for (size_t i = res.quot; i < byteCount; i++) {
+            tagmap_setb(addr + i, dst_tags[i - res.quot]);
+        }
+    } else { // We need to combine the taint
+        tagmap_setb(addr + res.quot, dst_tags[0]);
+        for (size_t i = res.quot + 1; i < byteCount; i++) {
+            tagmap_setb(addr + i, tag_combine(dst_tags[i - res.quot], dst_tags[i - res.quot - 1]));
+        }
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL m_shl_op_8(THREADID tid, uint64_t addr, uint32_t imm) {
+    if (imm > 7) {
+        tagmap_setb(addr, tag_traits<tag_t>::cleared_val);
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL r_reg_shl_op(THREADID tid, uint32_t reg_dst, uint8_t *reg_cnt, uint32_t byteCount) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+
+    r_shl_op(tid, reg_dst, imm, byteCount);
+}
+
+static void PIN_FAST_ANALYSIS_CALL r_reg_shl_op_upper8(THREADID tid, uint32_t reg_dst, uint8_t *reg_cnt) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+
+    r_shl_op_upper8(tid, reg_dst, imm);
+}
+
+static void PIN_FAST_ANALYSIS_CALL r_reg_shl_op_lower8(THREADID tid, uint32_t reg_dst, uint8_t *reg_cnt) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+
+    r_shl_op_lower8(tid, reg_dst, imm);
+}
+
+static void PIN_FAST_ANALYSIS_CALL m_reg_shl_op(THREADID tid, uint64_t addr, uint8_t *reg_cnt, uint32_t byteCount) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+
+    m_shl_op(tid, addr, imm, byteCount);
+}
+
+static void PIN_FAST_ANALYSIS_CALL m_reg_shl_op_8(THREADID tid, uint64_t addr, uint8_t *reg_cnt) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+
+    m_shl_op_8(tid, addr, imm);
+}
+
+void ins_shl_op(INS ins) {
+    if (INS_OperandIsReg(ins, OP_1)) {
+        REG reg_cnt = INS_OperandReg(ins, OP_1);
+        if (INS_MemoryOperandCount(ins) == 0) {
+            REG reg_dst = INS_OperandReg(ins, OP_0);
+            if (REG_is_gr64(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_shl_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (REG_is_gr32(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_shl_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (REG_is_gr16(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_shl_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 2,
+                               IARG_END);
+            } else if (REG_is_Lower8(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_shl_op_lower8,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_END);
+            } else {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_shl_op_upper8,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_END);
+            }
+        } else {
+            if (INS_MemoryOperandSize(ins, OP_0) == 8) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_shl_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 4) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_shl_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 2) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_shl_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 2,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 1) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_shl_op_8,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_END);
+            }
+        }
+    } else {
+        uint32_t imm = 1; // If no other immediate or value from RCX are used, then the second operand is 1
+        if (INS_OperandIsImmediate(ins, OP_1)) {
+            imm = INS_OperandImmediate(ins, OP_1);
+        }
+        if (INS_MemoryOperandCount(ins) == 0) {
+            REG reg_dst = INS_OperandReg(ins, OP_0);
+            if (REG_is_gr64(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_shl_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (REG_is_gr32(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_shl_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (REG_is_gr16(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_shl_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 2,
+                               IARG_END);
+            } else if (REG_is_Lower8(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_shl_op_lower8,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_END);
+            } else {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_shl_op_upper8,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_END);
+            }
+        } else {
+            if (INS_MemoryOperandSize(ins, OP_0) == 8) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_shl_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 4) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_shl_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 2) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_shl_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 2,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 1) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_shl_op_8,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_END);
+            }
+        }
+    }
+}
+
+
+
+static void PIN_FAST_ANALYSIS_CALL r_shr_op(THREADID tid, uint32_t reg_dst, uint32_t imm, uint32_t byteCount) {
+    if (imm == 0) {
+        return;
+    }
+
+    if (imm > byteCount * 8 - 1) {
+        for (size_t i = 0; i < byteCount; i++) {
+            RTAG[reg_dst][i] = tag_traits<tag_t>::cleared_val;
+        }
+        return;
+    }
+
+    tag_t dst_tags[byteCount];
+    for (size_t i = 0; i < byteCount; i++) {
+        dst_tags[i] = RTAG[reg_dst][i];
+    }
+
+    // Calculate bytewise taint from bitwise shift
+    auto res = std::div(imm, 8);
+
+    // Clear all whole bytes
+    for (size_t i = byteCount - 1; i >= byteCount - (uint32_t)res.quot; i--) {
+        RTAG[reg_dst][i] = tag_traits<tag_t>::cleared_val;
+    }
+
+    // If the bitshift uses whole bytes
+    if (res.rem == 0) {
+        // Shift the tainted values
+        for (size_t i = byteCount - res.quot - 1; i < byteCount; i--) {
+            RTAG[reg_dst][i] = dst_tags[i + res.quot];
+        }
+    } else { // We need to combine the taint
+        RTAG[reg_dst][byteCount - res.quot - 1] = dst_tags[byteCount - 1];
+        for (size_t i = byteCount - res.quot - 2; i < byteCount; i--) {
+            RTAG[reg_dst][i] = tag_combine(dst_tags[i + res.quot], dst_tags[i + res.quot + 1]);
+        }
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL r_shr_op_upper8(THREADID tid, uint32_t reg_dst, uint32_t imm) {
+    if (imm > 7) {
+        RTAG[reg_dst][1] = tag_traits<tag_t>::cleared_val;
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL r_shr_op_lower8(THREADID tid, uint32_t reg_dst, uint32_t imm) {
+    if (imm > 7) {
+        RTAG[reg_dst][0] = tag_traits<tag_t>::cleared_val;
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL m_shr_op(THREADID tid, uint64_t addr, uint32_t imm, uint32_t byteCount) {
+    if (imm == 0) {
+        return;
+    }
+
+    if (imm > byteCount * 8 - 1) {
+        for (size_t i = 0; i < byteCount; i++) {
+            tagmap_setb(addr + i, tag_traits<tag_t>::cleared_val);
+        }
+        return;
+    }
+
+    tag_t dst_tags[byteCount];
+    for (size_t i = 0; i < byteCount; i++) {
+        dst_tags[i] = MTAG(addr + i);
+    }
+
+    // Calculate bytewise taint from bitwise shift
+    auto res = std::div(imm, 8);
+
+    // Clear all whole bytes
+    for (size_t i = byteCount - 1; i >= byteCount - (uint32_t)res.quot; i--) {
+        tagmap_setb(addr + i, tag_traits<tag_t>::cleared_val);
+    }
+
+    // If the bitshift uses whole bytes
+    if (res.rem == 0) {
+        // Shift the tainted values
+        for (size_t i = byteCount - res.quot - 1; i < byteCount; i--) {
+            tagmap_setb(addr + i, dst_tags[i + res.quot]);
+        }
+    } else { // We need to combine the taint
+        tagmap_setb(addr +(byteCount - res.quot - 1), dst_tags[byteCount - 1]);
+        for (size_t i = byteCount - res.quot - 2; i < byteCount; i--) {
+            tagmap_setb(addr + i, tag_combine(dst_tags[i + res.quot], dst_tags[i + res.quot + 1]));
+        }
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL m_shr_op_8(THREADID tid, uint64_t addr, uint32_t imm) {
+    if (imm > 7) {
+        tagmap_setb(addr, tag_traits<tag_t>::cleared_val);
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL r_reg_shr_op(THREADID tid, uint32_t reg_dst, uint8_t *reg_cnt, uint32_t byteCount) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+
+    r_shr_op(tid, reg_dst, imm, byteCount);
+}
+
+static void PIN_FAST_ANALYSIS_CALL r_reg_shr_op_upper8(THREADID tid, uint32_t reg_dst, uint8_t *reg_cnt) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+
+    r_shr_op_upper8(tid, reg_dst, imm);
+}
+
+static void PIN_FAST_ANALYSIS_CALL r_reg_shr_op_lower8(THREADID tid, uint32_t reg_dst, uint8_t *reg_cnt) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+
+    r_shr_op_lower8(tid, reg_dst, imm);
+}
+
+static void PIN_FAST_ANALYSIS_CALL m_reg_shr_op(THREADID tid, uint64_t addr, uint8_t *reg_cnt, uint32_t byteCount) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+
+    m_shr_op(tid, addr, imm, byteCount);
+}
+
+static void PIN_FAST_ANALYSIS_CALL m_reg_shr_op_8(THREADID tid, uint64_t addr, uint8_t *reg_cnt) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+
+    m_shr_op_8(tid, addr, imm);
+}
+
+void ins_shr_op(INS ins) {
+    if (INS_OperandIsReg(ins, OP_1)) {
+        REG reg_cnt = INS_OperandReg(ins, OP_1);
+        if (INS_MemoryOperandCount(ins) == 0) {
+            REG reg_dst = INS_OperandReg(ins, OP_0);
+            if (REG_is_gr64(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_shr_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (REG_is_gr32(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_shr_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (REG_is_gr16(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_shr_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 2,
+                               IARG_END);
+            } else if (REG_is_Lower8(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_shr_op_lower8,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_END);
+            } else {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_shr_op_upper8,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_END);
+            }
+        } else {
+            if (INS_MemoryOperandSize(ins, OP_0) == 8) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_shr_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 4) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_shr_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 2) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_shr_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 2,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 1) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_shr_op_8,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_END);
+            }
+        }
+    } else {
+        uint32_t imm = 1; // If no other immediate or value from RCX are used, then the second operand is 1
+        if (INS_OperandIsImmediate(ins, OP_1)) {
+            imm = INS_OperandImmediate(ins, OP_1);
+        }
+        if (INS_MemoryOperandCount(ins) == 0) {
+            REG reg_dst = INS_OperandReg(ins, OP_0);
+            if (REG_is_gr64(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_shr_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (REG_is_gr32(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_shr_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (REG_is_gr16(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_shr_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 2,
+                               IARG_END);
+            } else if (REG_is_Lower8(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_shr_op_lower8,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_END);
+            } else {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_shr_op_upper8,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_END);
+            }
+        } else {
+            if (INS_MemoryOperandSize(ins, OP_0) == 8) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_shr_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 4) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_shr_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 2) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_shr_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 2,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 1) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_shr_op_8,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_END);
+            }
+        }
+    }
+}
+
+
+static void PIN_FAST_ANALYSIS_CALL r_rol_op(THREADID tid, uint32_t reg_dst, uint32_t imm, uint32_t byteCount) {
+    if (imm == 0) {
+        return;
+    }
+
+    tag_t dst_tags[byteCount];
+    for (size_t i = 0; i < byteCount; i++) {
+        dst_tags[i] = RTAG[reg_dst][i];
+    }
+
+    // Calculate bytewise taint from bitwise shift
+    auto res = std::div(imm, 8);
+
+    // If the bitshift uses whole bytes
+    if (res.rem == 0) {
+        for (size_t i = 0; i < (uint32_t)res.quot; i++) {
+            RTAG[reg_dst][i] = dst_tags[i + (byteCount - res.quot)];
+        }
+        for (size_t i = res.quot; i < byteCount; i++) {
+            RTAG[reg_dst][i] = dst_tags[i - res.quot];
+        }
+    } else { // We need to combine the taint
+        for (size_t i = 0; i < (uint32_t)res.quot; i++) {
+            RTAG[reg_dst][i] = tag_combine(dst_tags[byteCount - res.quot + i], dst_tags[byteCount - res.quot + i - 1]);
+        }
+        RTAG[reg_dst][res.quot] = tag_combine(dst_tags[byteCount - 1], dst_tags[0]);
+        for (size_t i = res.quot + 1; i < byteCount; i++) {
+            RTAG[reg_dst][i] = tag_combine(dst_tags[i - res.quot], dst_tags[i - res.quot - 1]);
+        }
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL r_reg_rol_op(THREADID tid, uint32_t reg_dst, uint8_t *reg_cnt, uint32_t byteCount, BOOL hasRepPrefix) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+    uint32_t mask = 0;
+    if (hasRepPrefix) {
+        mask = 0x3F;
+    } else {
+        mask = 0x1F;
+    }
+    imm = mask & imm;
+
+    r_rol_op(tid, reg_dst, imm, byteCount);
+}
+
+static void PIN_FAST_ANALYSIS_CALL m_rol_op(THREADID tid, uint64_t addr, uint32_t imm, uint32_t byteCount) {
+    if (imm == 0) {
+        return;
+    }
+
+    tag_t dst_tags[byteCount];
+    for (size_t i = 0; i < byteCount; i++) {
+        dst_tags[i] = MTAG(addr + i);
+    }
+
+    // Calculate bytewise taint from bitwise shift
+    auto res = std::div(imm, 8);
+
+    // If the bitshift uses whole bytes
+    if (res.rem == 0) {
+        for (size_t i = 0; i < (uint32_t)res.quot; i++) {
+            tagmap_setb(addr + i, dst_tags[i + (byteCount - res.quot)]);
+        }
+        for (size_t i = res.quot; i < byteCount; i++) {
+            tagmap_setb(addr + i, dst_tags[i - res.quot]);
+        }
+    } else { // We need to combine the taint
+        for (size_t i = 0; i < (uint32_t)res.quot; i++) {
+            tagmap_setb(addr + i, tag_combine(dst_tags[byteCount - res.quot + i], dst_tags[byteCount - res.quot + i - 1]));
+        }
+        tagmap_setb(addr + res.quot, tag_combine(dst_tags[byteCount - 1], dst_tags[0]));
+        for (size_t i = res.quot + 1; i < byteCount; i++) {
+            tagmap_setb(addr + i, tag_combine(dst_tags[i - res.quot], dst_tags[i - res.quot - 1]));
+        }
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL m_reg_rol_op(THREADID tid, uint64_t addr, uint8_t *reg_cnt, uint32_t byteCount, BOOL hasRepPrefix) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+    uint32_t mask = 0;
+    if (hasRepPrefix) {
+        mask = 0x3F;
+    } else {
+        mask = 0x1F;
+    }
+    imm = mask & imm;
+
+    m_rol_op(tid, addr, imm, byteCount);
+}
+
+
+void ins_rol_op(INS ins) {
+    BOOL hasRepPrefix = INS_RepPrefix(ins);
+    if (INS_OperandIsReg(ins, OP_1)) {
+        REG reg_cnt = INS_OperandReg(ins, OP_1);
+        if (INS_MemoryOperandCount(ins) == 0) {
+            REG reg_dst = INS_OperandReg(ins, OP_0);
+            if (REG_is_gr64(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_rol_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 8,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+            } else if (REG_is_gr32(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_rol_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 4,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+            } else if (REG_is_gr16(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_rol_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 2,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+//            } else if (REG_is_Lower8(reg_dst)) {
+//                 // HINT: As long as the carry flag is not tainted, this is not needed
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_rol_op_lower8,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_UINT32, REG_INDX(reg_dst),
+//                               IARG_REG_CONST_REFERENCE, reg_cnt,
+//                               IARG_BOOL, hasRepPrefix,
+//                               IARG_END);
+//            } else {
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_rol_op_upper8,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_UINT32, REG_INDX(reg_dst),
+//                               IARG_REG_CONST_REFERENCE, reg_cnt,
+//                               IARG_BOOL, hasRepPrefix,
+//                               IARG_END);
+            }
+        } else {
+            if (INS_MemoryOperandSize(ins, OP_0) == 8) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_rol_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 8,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 4) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_rol_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 4,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 2) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_rol_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 2,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+//            } else if (INS_MemoryOperandSize(ins, OP_0) == 1) {
+//                // HINT: As long as the carry flag is not tainted, this is not needed
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_rol_op,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_MEMORYWRITE_EA,
+//                               IARG_REG_CONST_REFERENCE, reg_cnt,
+//                               IARG_UINT32, 1,
+//                               IARG_BOOL, hasRepPrefix,
+//                               IARG_END);
+            }
+        }
+    } else {
+        uint32_t imm = 1; // If no other immediate or value from RCX are used, then the second operand is 1
+        uint32_t mask = 0;
+        if (INS_OperandIsImmediate(ins, OP_1)) {
+            if (hasRepPrefix) {
+                mask = 0x3F;
+            } else {
+                mask = 0x1F;
+            }
+            imm = mask & INS_OperandImmediate(ins, OP_1);
+        }
+        if (INS_MemoryOperandCount(ins) == 0) {
+            REG reg_dst = INS_OperandReg(ins, OP_0);
+            if (REG_is_gr64(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_rol_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (REG_is_gr32(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_rol_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (REG_is_gr16(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_rol_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 2,
+                               IARG_END);
+//            } else if (REG_is_Lower8(reg_dst)) {
+//                // HINT: As long as the carry flag is not tainted, this is not needed
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_rol_op_lower8,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_UINT32, REG_INDX(reg_dst),
+//                               IARG_UINT32, imm,
+//                               IARG_END);
+//            } else {
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_rol_op_upper8,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_UINT32, REG_INDX(reg_dst),
+//                               IARG_UINT32, imm,
+//                               IARG_END);
+            }
+        } else {
+            if (INS_MemoryOperandSize(ins, OP_0) == 8) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_rol_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 4) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_rol_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 2) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_rol_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 2,
+                               IARG_END);
+//            } else if (INS_MemoryOperandSize(ins, OP_0) == 1) {
+//                // HINT: As long as the carry flag is not tainted, this is not needed
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_rol_op,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_MEMORYWRITE_EA,
+//                               IARG_UINT32, imm,
+//                               IARG_UINT32, 1,
+//                               IARG_END);
+            }
+        }
+    }
+}
+
+
+static void PIN_FAST_ANALYSIS_CALL r_reg_rcl_op(THREADID tid, uint32_t reg_dst, uint8_t *reg_cnt, uint32_t byteCount, BOOL hasRepPrefix) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+    uint32_t mask = 0;
+    if (hasRepPrefix) {
+        mask = 0x3F;
+    } else {
+        mask = 0x1F;
+    }
+    imm = mask & imm;
+    imm++;
+
+    r_rol_op(tid, reg_dst, imm, byteCount);
+}
+
+static void PIN_FAST_ANALYSIS_CALL m_reg_rcl_op(THREADID tid, uint64_t addr, uint8_t *reg_cnt, uint32_t byteCount, BOOL hasRepPrefix) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+    uint32_t mask = 0;
+    if (hasRepPrefix) {
+        mask = 0x3F;
+    } else {
+        mask = 0x1F;
+    }
+    imm = mask & imm;
+    imm++;
+
+    m_rol_op(tid, addr, imm, byteCount);
+}
+
+void ins_rcl_op(INS ins) {
+    BOOL hasRepPrefix = INS_RepPrefix(ins);
+    if (INS_OperandIsReg(ins, OP_1)) {
+        REG reg_cnt = INS_OperandReg(ins, OP_1);
+        if (INS_MemoryOperandCount(ins) == 0) {
+            REG reg_dst = INS_OperandReg(ins, OP_0);
+            if (REG_is_gr64(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_rcl_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 8,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+            } else if (REG_is_gr32(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_rcl_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 4,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+            } else if (REG_is_gr16(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_rcl_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 2,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+//            } else if (REG_is_Lower8(reg_dst)) {
+//                 // HINT: As long as the carry flag is not tainted, this is not needed
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_rcl_op_lower8,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_UINT32, REG_INDX(reg_dst),
+//                               IARG_REG_CONST_REFERENCE, reg_cnt,
+//                               IARG_BOOL, hasRepPrefix,
+//                               IARG_END);
+//            } else {
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_rcl_op_upper8,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_UINT32, REG_INDX(reg_dst),
+//                               IARG_REG_CONST_REFERENCE, reg_cnt,
+//                               IARG_BOOL, hasRepPrefix,
+//                               IARG_END);
+            }
+        } else {
+            if (INS_MemoryOperandSize(ins, OP_0) == 8) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_rcl_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 8,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 4) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_rcl_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 4,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 2) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_rcl_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 2,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+//            } else if (INS_MemoryOperandSize(ins, OP_0) == 1) {
+//                // HINT: As long as the carry flag is not tainted, this is not needed
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_rcl_op,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_MEMORYWRITE_EA,
+//                               IARG_REG_CONST_REFERENCE, reg_cnt,
+//                               IARG_UINT32, 1,
+//                               IARG_BOOL, hasRepPrefix,
+//                               IARG_END);
+            }
+        }
+    } else {
+        uint32_t imm = 1; // If no other immediate or value from RCX are used, then the second operand is 1
+        uint32_t mask = 0;
+        if (INS_OperandIsImmediate(ins, OP_1)) {
+            if (hasRepPrefix) {
+                mask = 0x3F;
+            } else {
+                mask = 0x1F;
+            }
+            imm = mask & INS_OperandImmediate(ins, OP_1);
+        }
+        imm++; // HINT: as long as flags are untainted, rcr is just a ror operation with N+1 instead of N rotations
+
+        if (INS_MemoryOperandCount(ins) == 0) {
+            REG reg_dst = INS_OperandReg(ins, OP_0);
+            if (REG_is_gr64(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_rol_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (REG_is_gr32(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_rol_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (REG_is_gr16(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_rol_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 2,
+                               IARG_END);
+//            } else if (REG_is_Lower8(reg_dst)) {
+//                // HINT: As long as the carry flag is not tainted, this is not needed
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_rol_op_lower8,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_UINT32, REG_INDX(reg_dst),
+//                               IARG_UINT32, imm,
+//                               IARG_END);
+//            } else {
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_rol_op_upper8,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_UINT32, REG_INDX(reg_dst),
+//                               IARG_UINT32, imm,
+//                               IARG_END);
+            }
+        } else {
+            if (INS_MemoryOperandSize(ins, OP_0) == 8) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_rol_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 4) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_rol_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 2) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_rol_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 2,
+                               IARG_END);
+//            } else if (INS_MemoryOperandSize(ins, OP_0) == 1) {
+//                // HINT: As long as the carry flag is not tainted, this is not needed
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_rol_op,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_MEMORYWRITE_EA,
+//                               IARG_UINT32, imm,
+//                               IARG_UINT32, 1,
+//                               IARG_END);
+            }
+        }
+    }
+}
+
+
+static void PIN_FAST_ANALYSIS_CALL r_ror_op(THREADID tid, uint32_t reg_dst, uint32_t imm, uint32_t byteCount) {
+    if (imm == 0) {
+        return;
+    }
+
+    tag_t dst_tags[byteCount];
+    for (size_t i = 0; i < byteCount; i++) {
+        dst_tags[i] = RTAG[reg_dst][i];
+    }
+
+    // Calculate bytewise taint from bitwise shift
+    auto res = std::div(imm, 8);
+
+    // If the bitshift uses whole bytes
+    if (res.rem == 0) {
+        for (size_t i = byteCount - 1; i >= byteCount - (uint32_t)res.quot; i--) {
+            RTAG[reg_dst][i] = dst_tags[i - (byteCount - res.quot)];
+        }
+        for (size_t i = byteCount - res.quot - 1; i < byteCount; i--) {
+            RTAG[reg_dst][i] = dst_tags[i + res.quot];
+        }
+    } else { // We need to combine the taint
+        for (size_t i = byteCount - 1; i >= byteCount - (uint32_t)res.quot; i--) {
+            RTAG[reg_dst][i] = tag_combine(dst_tags[i - (byteCount - res.quot)], dst_tags[i - (byteCount - res.quot) + 1]);
+        }
+        RTAG[reg_dst][byteCount - res.quot - 1] = tag_combine(dst_tags[byteCount - 1], dst_tags[0]);
+        for (size_t i = byteCount - res.quot - 2; i < byteCount; i--) {
+            RTAG[reg_dst][i] = tag_combine(dst_tags[i + res.quot], dst_tags[i + res.quot + 1]);
+        }
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL r_reg_ror_op(THREADID tid, uint32_t reg_dst, uint8_t *reg_cnt, uint32_t byteCount, BOOL hasRepPrefix) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+    uint32_t mask = 0;
+    if (hasRepPrefix) {
+        mask = 0x3F;
+    } else {
+        mask = 0x1F;
+    }
+    imm = mask & imm;
+
+    r_ror_op(tid, reg_dst, imm, byteCount);
+}
+
+static void PIN_FAST_ANALYSIS_CALL m_ror_op(THREADID tid, uint64_t addr, uint32_t imm, uint32_t byteCount) {
+    if (imm == 0) {
+        return;
+    }
+
+    tag_t dst_tags[byteCount];
+    for (size_t i = 0; i < byteCount; i++) {
+        dst_tags[i] = MTAG(addr + i);
+    }
+
+    // Calculate bytewise taint from bitwise shift
+    auto res = std::div(imm, 8);
+
+    // If the bitshift uses whole bytes
+    if (res.rem == 0) {
+        for (size_t i = byteCount - 1; i >= byteCount - (uint32_t)res.quot; i--) {
+            tagmap_setb(addr + i, dst_tags[i - (byteCount - res.quot)]);
+        }
+        for (size_t i = byteCount - res.quot - 1; i < byteCount; i--) {
+            tagmap_setb(addr + i, dst_tags[i + res.quot]);
+        }
+    } else { // We need to combine the taint
+        for (size_t i = byteCount - 1; i >= byteCount - (uint32_t)res.quot; i--) {
+            tagmap_setb(addr + i, tag_combine(dst_tags[i - (byteCount - res.quot)], dst_tags[i - (byteCount - res.quot) + 1]));
+        }
+        tagmap_setb(addr + byteCount - res.quot - 1, tag_combine(dst_tags[byteCount - 1], dst_tags[0]));
+        for (size_t i = byteCount - res.quot - 2; i < byteCount; i--) {
+            tagmap_setb(addr + i, tag_combine(dst_tags[i + res.quot], dst_tags[i + res.quot + 1]));
+        }
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL m_reg_ror_op(THREADID tid, uint64_t addr, uint8_t *reg_cnt, uint32_t byteCount, BOOL hasRepPrefix) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+    uint32_t mask = 0;
+    if (hasRepPrefix) {
+        mask = 0x3F;
+    } else {
+        mask = 0x1F;
+    }
+    imm = mask & imm;
+
+    m_ror_op(tid, addr, imm, byteCount);
+}
+
+
+void ins_ror_op(INS ins) {
+    BOOL hasRepPrefix = INS_RepPrefix(ins);
+    if (INS_OperandIsReg(ins, OP_1)) {
+        REG reg_cnt = INS_OperandReg(ins, OP_1);
+        if (INS_MemoryOperandCount(ins) == 0) {
+            REG reg_dst = INS_OperandReg(ins, OP_0);
+            if (REG_is_gr64(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_ror_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 8,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+            } else if (REG_is_gr32(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_ror_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 4,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+            } else if (REG_is_gr16(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_ror_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 2,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+//            } else if (REG_is_Lower8(reg_dst)) {
+//                 // HINT: As long as the carry flag is not tainted, this is not needed
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_ror_op_lower8,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_UINT32, REG_INDX(reg_dst),
+//                               IARG_REG_CONST_REFERENCE, reg_cnt,
+//                               IARG_BOOL, hasRepPrefix,
+//                               IARG_END);
+//            } else {
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_ror_op_upper8,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_UINT32, REG_INDX(reg_dst),
+//                               IARG_REG_CONST_REFERENCE, reg_cnt,
+//                               IARG_BOOL, hasRepPrefix,
+//                               IARG_END);
+            }
+        } else {
+            if (INS_MemoryOperandSize(ins, OP_0) == 8) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_ror_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 8,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 4) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_ror_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 4,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 2) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_ror_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 2,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+//            } else if (INS_MemoryOperandSize(ins, OP_0) == 1) {
+//                // HINT: As long as the carry flag is not tainted, this is not needed
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_ror_op,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_MEMORYWRITE_EA,
+//                               IARG_REG_CONST_REFERENCE, reg_cnt,
+//                               IARG_UINT32, 1,
+//                               IARG_BOOL, hasRepPrefix,
+//                               IARG_END);
+            }
+        }
+    } else {
+        uint32_t imm = 1; // If no other immediate or value from RCX are used, then the second operand is 1
+        uint32_t mask = 0;
+        if (INS_OperandIsImmediate(ins, OP_1)) {
+            if (hasRepPrefix) {
+                mask = 0x3F;
+            } else {
+                mask = 0x1F;
+            }
+            imm = mask & INS_OperandImmediate(ins, OP_1);
+        }
+        if (INS_MemoryOperandCount(ins) == 0) {
+            REG reg_dst = INS_OperandReg(ins, OP_0);
+            if (REG_is_gr64(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_ror_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (REG_is_gr32(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_ror_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (REG_is_gr16(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_ror_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 2,
+                               IARG_END);
+//            } else if (REG_is_Lower8(reg_dst)) {
+//                // HINT: As long as the carry flag is not tainted, this is not needed
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_ror_op_lower8,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_UINT32, REG_INDX(reg_dst),
+//                               IARG_UINT32, imm,
+//                               IARG_END);
+//            } else {
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_ror_op_upper8,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_UINT32, REG_INDX(reg_dst),
+//                               IARG_UINT32, imm,
+//                               IARG_END);
+            }
+        } else {
+            if (INS_MemoryOperandSize(ins, OP_0) == 8) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_ror_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 4) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_ror_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 2) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_ror_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 2,
+                               IARG_END);
+//            } else if (INS_MemoryOperandSize(ins, OP_0) == 1) {
+//                // HINT: As long as the carry flag is not tainted, this is not needed
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_ror_op,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_MEMORYWRITE_EA,
+//                               IARG_UINT32, imm,
+//                               IARG_UINT32, 1,
+//                               IARG_END);
+            }
+        }
+    }
+}
+
+
+static void PIN_FAST_ANALYSIS_CALL r_reg_rcr_op(THREADID tid, uint32_t reg_dst, uint8_t *reg_cnt, uint32_t byteCount, BOOL hasRepPrefix) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+    uint32_t mask = 0;
+    if (hasRepPrefix) {
+        mask = 0x3F;
+    } else {
+        mask = 0x1F;
+    }
+    imm = mask & imm;
+    imm++;
+
+    r_ror_op(tid, reg_dst, imm, byteCount);
+}
+
+static void PIN_FAST_ANALYSIS_CALL m_reg_rcr_op(THREADID tid, uint64_t addr, uint8_t *reg_cnt, uint32_t byteCount, BOOL hasRepPrefix) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+    uint32_t mask = 0;
+    if (hasRepPrefix) {
+        mask = 0x3F;
+    } else {
+        mask = 0x1F;
+    }
+    imm = mask & imm;
+    imm++;
+
+    m_ror_op(tid, addr, imm, byteCount);
+}
+
+
+void ins_rcr_op(INS ins) {
+    BOOL hasRepPrefix = INS_RepPrefix(ins);
+    if (INS_OperandIsReg(ins, OP_1)) {
+        REG reg_cnt = INS_OperandReg(ins, OP_1);
+        if (INS_MemoryOperandCount(ins) == 0) {
+            REG reg_dst = INS_OperandReg(ins, OP_0);
+            if (REG_is_gr64(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_rcr_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 8,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+            } else if (REG_is_gr32(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_rcr_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 4,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+            } else if (REG_is_gr16(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_rcr_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 2,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+//            } else if (REG_is_Lower8(reg_dst)) {
+//                 // HINT: As long as the carry flag is not tainted, this is not needed
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_rcr_op_lower8,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_UINT32, REG_INDX(reg_dst),
+//                               IARG_REG_CONST_REFERENCE, reg_cnt,
+//                               IARG_BOOL, hasRepPrefix,
+//                               IARG_END);
+//            } else {
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_rcr_op_upper8,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_UINT32, REG_INDX(reg_dst),
+//                               IARG_REG_CONST_REFERENCE, reg_cnt,
+//                               IARG_BOOL, hasRepPrefix,
+//                               IARG_END);
+            }
+        } else {
+            if (INS_MemoryOperandSize(ins, OP_0) == 8) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_rcr_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 8,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 4) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_rcr_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 4,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 2) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_rcr_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 2,
+                               IARG_BOOL, hasRepPrefix,
+                               IARG_END);
+//            } else if (INS_MemoryOperandSize(ins, OP_0) == 1) {
+//                // HINT: As long as the carry flag is not tainted, this is not needed
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_rcr_op,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_MEMORYWRITE_EA,
+//                               IARG_REG_CONST_REFERENCE, reg_cnt,
+//                               IARG_UINT32, 1,
+//                               IARG_BOOL, hasRepPrefix,
+//                               IARG_END);
+            }
+        }
+    } else {
+        uint32_t imm = 1; // If no other immediate or value from RCX are used, then the second operand is 1
+        uint32_t mask = 0;
+        if (INS_OperandIsImmediate(ins, OP_1)) {
+            if (hasRepPrefix) {
+                mask = 0x3F;
+            } else {
+                mask = 0x1F;
+            }
+            imm = mask & INS_OperandImmediate(ins, OP_1);
+        }
+        imm ++; // HINT: as long as flags are untainted, rcr is just a ror operation with N+1 instead of N rotations
+
+        if (INS_MemoryOperandCount(ins) == 0) {
+            REG reg_dst = INS_OperandReg(ins, OP_0);
+            if (REG_is_gr64(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_ror_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (REG_is_gr32(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_ror_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (REG_is_gr16(reg_dst)) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_ror_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 2,
+                               IARG_END);
+//            } else if (REG_is_Lower8(reg_dst)) {
+//                // HINT: As long as the carry flag is not tainted, this is not needed
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_ror_op_lower8,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_UINT32, REG_INDX(reg_dst),
+//                               IARG_UINT32, imm,
+//                               IARG_END);
+//            } else {
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_ror_op_upper8,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_UINT32, REG_INDX(reg_dst),
+//                               IARG_UINT32, imm,
+//                               IARG_END);
+            }
+        } else {
+            if (INS_MemoryOperandSize(ins, OP_0) == 8) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_ror_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 8,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 4) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_ror_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 4,
+                               IARG_END);
+            } else if (INS_MemoryOperandSize(ins, OP_0) == 2) {
+                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_ror_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, imm,
+                               IARG_UINT32, 2,
+                               IARG_END);
+//            } else if (INS_MemoryOperandSize(ins, OP_0) == 1) {
+//                // HINT: As long as the carry flag is not tainted, this is not needed
+//                INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_ror_op,
+//                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+//                               IARG_MEMORYWRITE_EA,
+//                               IARG_UINT32, imm,
+//                               IARG_UINT32, 1,
+//                               IARG_END);
+            }
+        }
+    }
+}
+
+
+static void PIN_FAST_ANALYSIS_CALL r2r_rorx_op(THREADID tid, uint32_t reg_dst, uint32_t reg_src, uint32_t imm, uint32_t byteCount) {
+    if (imm == 0) {
+        return;
+    }
+
+    tag_t src_tags[byteCount];
+    for (size_t i = 0; i < byteCount; i++) {
+        src_tags[i] = RTAG[reg_src][i];
+    }
+
+    // Calculate bytewise taint from bitwise shift
+    auto res = std::div(imm, 8);
+
+    // If the bitshift uses whole bytes
+    if (res.rem == 0) {
+        for (size_t i = byteCount - 1; i >= byteCount - (uint32_t)res.quot; i--) {
+            RTAG[reg_dst][i] = src_tags[i - (byteCount - res.quot)];
+        }
+        for (size_t i = byteCount - res.quot - 1; i < byteCount; i--) {
+            RTAG[reg_dst][i] = src_tags[i + res.quot];
+        }
+    } else { // We need to combine the taint
+        for (size_t i = byteCount - 1; i >= byteCount - (uint32_t)res.quot; i--) {
+            RTAG[reg_dst][i] = tag_combine(src_tags[i - (byteCount - res.quot)], src_tags[i - (byteCount - res.quot) + 1]);
+        }
+        RTAG[reg_dst][byteCount - res.quot - 1] = tag_combine(src_tags[byteCount - 1], src_tags[0]);
+        for (size_t i = byteCount - res.quot - 2; i < byteCount; i--) {
+            RTAG[reg_dst][i] = tag_combine(src_tags[i + res.quot], src_tags[i + res.quot + 1]);
+        }
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL m2r_rorx_op(THREADID tid, uint32_t reg_dst, uint64_t addr, uint32_t imm, uint32_t byteCount) {
+    if (imm == 0) {
+        return;
+    }
+
+    tag_t src_tags[byteCount];
+    for (size_t i = 0; i < byteCount; i++) {
+        src_tags[i] = MTAG(addr + i);
+    }
+
+    // Calculate bytewise taint from bitwise shift
+    auto res = std::div(imm, 8);
+
+    // If the bitshift uses whole bytes
+    if (res.rem == 0) {
+        for (size_t i = byteCount - 1; i >= byteCount - (uint32_t)res.quot; i--) {
+            tagmap_setb(addr + i, src_tags[i - (byteCount - res.quot)]);
+        }
+        for (size_t i = byteCount - res.quot - 1; i < byteCount; i--) {
+            tagmap_setb(addr + i, src_tags[i + res.quot]);
+        }
+    } else { // We need to combine the taint
+        for (size_t i = byteCount - 1; i >= byteCount - (uint32_t)res.quot; i--) {
+            tagmap_setb(addr + i, tag_combine(src_tags[i - (byteCount - res.quot)], src_tags[i - (byteCount - res.quot) + 1]));
+        }
+        tagmap_setb(addr + byteCount - res.quot - 1, tag_combine(src_tags[byteCount - 1], src_tags[0]));
+        for (size_t i = byteCount - res.quot - 2; i < byteCount; i--) {
+            tagmap_setb(addr + i, tag_combine(src_tags[i + res.quot], src_tags[i + res.quot + 1]));
+        }
+    }
+}
+
+
+
+void ins_rorx_ins(INS ins) {
+    REG reg_dst = INS_OperandReg(ins, OP_0);
+    uint32_t imm = INS_OperandImmediate(ins, OP_2);
+    if (INS_MemoryOperandCount(ins) == 0) {
+        REG reg_src = INS_OperandReg(ins, OP_1);
+        if (REG_is_gr64(reg_dst)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2r_rorx_op,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_UINT32, REG_INDX(reg_src),
+                           IARG_UINT32, imm,
+                           IARG_UINT32, 8,
+                           IARG_END);
+        } else if (REG_is_gr32(reg_dst)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR) r2r_rorx_op,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_UINT32, REG_INDX(reg_src),
+                           IARG_UINT32, imm,
+                           IARG_UINT32, 4,
+                           IARG_END);
+        }
+    } else if (INS_OperandIsMemory(ins, OP_1)) {
+        if (INS_MemoryOperandSize(ins, OP_0) == 8) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m2r_rorx_op,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_MEMORYREAD_EA,
+                           IARG_UINT32, imm,
+                           IARG_UINT32, 8,
+                           IARG_END);
+        } else if (INS_MemoryOperandSize(ins, OP_0) == 4) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR) m2r_rorx_op,
+                           IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_MEMORYREAD_EA,
+                           IARG_UINT32, imm,
+                           IARG_UINT32, 4,
+                           IARG_END);
+        }
+    } else {
+        xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+        LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+    }
+}

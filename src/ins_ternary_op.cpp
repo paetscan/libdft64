@@ -262,3 +262,88 @@ void ins_clear_ternary_op(INS ins) {
             IARG_END);
     }     
 }
+
+void _pminub_r2r_opq(THREADID tid, uint32_t dst, uint8_t *dst_val, uint32_t src, uint8_t *src_val) {
+    for (size_t i = 0; i < 8; i++) {
+        if (src_val[i] <= dst_val[i]) {
+            RTAG[dst][i] = RTAG[src][i];
+        }
+    }
+}
+
+void _pminub_r2r_opx(THREADID tid, uint32_t dst, uint8_t *dst_val, uint32_t src, uint8_t *src_val) {
+    for (size_t i = 0; i < 16; i++) {
+        if (src_val[i] <= dst_val[i]) {
+            RTAG[dst][i] = RTAG[src][i];
+        }
+    }
+}
+
+void _pminub_m2r_opq(THREADID tid, uint32_t dst, uint8_t *dst_val, ADDRINT src) {
+    tag_t src_tags[] = M64TAG(src);
+    for (size_t i = 0; i < 8; i++) {
+        uint8_t src_val = *(uint8_t *)(src + i);
+        if (src_val <= dst_val[i]) {
+            RTAG[dst][i] = src_tags[i];
+        }
+    }
+}
+
+void _pminub_m2r_opx(THREADID tid, uint32_t dst, uint8_t *dst_val, ADDRINT src) {
+    tag_t src_tags[] = M128TAG(src);
+    for (size_t i = 0; i < 16; i++) {
+        uint8_t src_val = *(uint8_t *)(src + i);
+        if (src_val <= dst_val[i]) {
+            RTAG[dst][i] = src_tags[i];
+        }
+    }
+}
+
+void ins_pminub_op(INS ins) {
+    // 2 operands, byte integers
+    REG reg_dst, reg_src;
+    if (INS_MemoryOperandCount(ins) == 0) {
+        reg_dst = INS_OperandReg(ins, OP_0);
+        reg_src = INS_OperandReg(ins, OP_1);
+        if (REG_is_mm(reg_dst)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)_pminub_r2r_opq,
+                           IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_REG_CONST_REFERENCE, reg_dst,
+                           IARG_UINT32, REG_INDX(reg_src),
+                           IARG_REG_CONST_REFERENCE, reg_src,
+                           IARG_END);
+        } else if (REG_is_xmm(reg_dst)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)_pminub_r2r_opx,
+                           IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_REG_CONST_REFERENCE, reg_dst,
+                           IARG_UINT32, REG_INDX(reg_src),
+                           IARG_REG_CONST_REFERENCE, reg_src,
+                           IARG_END);
+        } else {
+            xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+            LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+        }
+    } else {
+        reg_dst = INS_OperandReg(ins, OP_0);
+        if (REG_is_mm(reg_dst)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)_pminub_m2r_opq,
+                           IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_REG_CONST_REFERENCE, reg_dst,
+                           IARG_MEMORYREAD_EA,
+                           IARG_END);
+        } else if (REG_is_xmm(reg_dst)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)_pminub_m2r_opx,
+                           IARG_THREAD_ID,
+                           IARG_UINT32, REG_INDX(reg_dst),
+                           IARG_REG_CONST_REFERENCE, reg_dst,
+                           IARG_MEMORYREAD_EA,
+                           IARG_END);
+        } else {
+            xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+            LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+        }
+    }
+}

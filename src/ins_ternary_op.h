@@ -12,4 +12,6 @@ void ins_vpminub_op(INS ins);
 
 void ins_pmovmskb_op(INS ins);
 
+void ins_pinsrd_op(INS ins);
+
 #endif

@@ -520,3 +520,56 @@ void ins_pmovmskb_op(INS ins) {
         LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
     }
 }
+
+static void PIN_FAST_ANALYSIS_CALL m2r_pinsrd_opx(THREADID tid, ADDRINT src, uint32_t dst, uint32_t imm) {
+    if (imm > 11)
+        return;
+
+    tag_t src_tags[] = M32TAG(src);
+    for (size_t i = 0; i < 4; ++i)
+    {
+        RTAG[dst][imm + i] = src_tags[i];
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL r2r_pinsrd_opx(THREADID tid, uint32_t dst, uint32_t src, uint32_t imm) {
+    if (imm > 11)
+        return;
+
+    tag_t src_tags[] = R32TAG(src);
+    for (size_t i = 0; i < 4; ++i)
+    {
+        RTAG[dst][imm + i] = src_tags[i];
+    }
+}
+
+void ins_pinsrd_op(INS ins) {
+    REG reg_dst = INS_OperandReg(ins, OP_0);
+    UINT32 imm = INS_OperandImmediate(ins, OP_2) & 0xFF;
+    if (INS_OperandIsMemory(ins, OP_1)) {
+        if (REG_is_xmm(reg_dst)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m2r_pinsrd_opx,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYREAD_EA,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, imm,
+                               IARG_END);
+        } else {
+            xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+            LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+        }
+    } else {
+        REG reg_src = INS_OperandReg(ins, OP_1);
+        if (REG_is_xmm(reg_dst)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r2r_pinsrd_opx,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_UINT32, imm,
+                               IARG_END);
+        } else {
+            xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+            LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+        }
+    }
+}

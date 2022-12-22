@@ -650,3 +650,142 @@ void ins_vinserti_op(INS ins) {
                        IARG_END);
     }
 }
+
+static void PIN_FAST_ANALYSIS_CALL r_sarx_op(THREADID tid, uint32_t reg_dst, uint32_t reg_src, uint32_t imm, uint32_t byteCount) {
+    if (imm == 0) {
+        return;
+    }
+
+    if (imm > byteCount * 8 - 1) {
+        for (size_t i = 0; i < byteCount; i++) {
+            RTAG[reg_dst][i] = tag_traits<tag_t>::cleared_val;
+        }
+        return;
+    }
+
+    tag_t src_tags[byteCount];
+    for (size_t i = 0; i < byteCount; i++) {
+        src_tags[i] = RTAG[reg_src][i];
+    }
+
+    // Calculate bytewise taint from bitwise shift
+    auto res = std::div(imm, 8);
+
+    // Clear all whole bytes
+    for (size_t i = byteCount - 1; i >= byteCount - (uint32_t)res.quot; i--) {
+        RTAG[reg_dst][i] = tag_traits<tag_t>::cleared_val;
+    }
+
+    // If the bitshift uses whole bytes
+    if (res.rem == 0) {
+        // Shift the tainted values
+        for (size_t i = byteCount - res.quot - 1; i < byteCount; i--) {
+            RTAG[reg_dst][i] = src_tags[i + res.quot];
+        }
+    } else { // We need to combine the taint
+        RTAG[reg_dst][byteCount - res.quot - 1] = src_tags[byteCount - 1];
+        for (size_t i = byteCount - res.quot - 2; i < byteCount; i--) {
+            RTAG[reg_dst][i] = tag_combine(src_tags[i + res.quot], src_tags[i + res.quot + 1]);
+        }
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL r_reg_sarx_op(THREADID tid, uint32_t reg_dst, uint32_t reg_src, uint8_t *reg_cnt, uint32_t byteCount) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+
+    r_sarx_op(tid, reg_dst, reg_src, imm, byteCount);
+}
+
+static void PIN_FAST_ANALYSIS_CALL m_sarx_op(THREADID tid, uint64_t addr, uint32_t reg_dst, uint32_t imm, uint32_t byteCount) {
+    if (imm == 0) {
+        return;
+    }
+
+    if (imm > byteCount * 8 - 1) {
+        for (size_t i = 0; i < byteCount; i++) {
+            RTAG[reg_dst][i] = tag_traits<tag_t>::cleared_val;
+        }
+        return;
+    }
+
+    tag_t src_tags[byteCount];
+    for (size_t i = 0; i < byteCount; i++) {
+        src_tags[i] = MTAG(addr + i);
+    }
+
+    // Calculate bytewise taint from bitwise shift
+    auto res = std::div(imm, 8);
+
+    // Clear all whole bytes
+    for (size_t i = byteCount - 1; i >= byteCount - (uint32_t)res.quot; i--) {
+        RTAG[reg_dst][i] = tag_traits<tag_t>::cleared_val;
+    }
+
+    // If the bitshift uses whole bytes
+    if (res.rem == 0) {
+        // Shift the tainted values
+        for (size_t i = byteCount - res.quot - 1; i < byteCount; i--) {
+            RTAG[reg_dst][i] = src_tags[i + res.quot];
+        }
+    } else { // We need to combine the taint
+        RTAG[reg_dst][byteCount - res.quot - 1] = src_tags[byteCount - 1];
+        for (size_t i = byteCount - res.quot - 2; i < byteCount; i--) {
+            RTAG[reg_dst][i] = tag_combine(src_tags[i + res.quot], src_tags[i + res.quot + 1]);
+        }
+    }
+}
+
+static void PIN_FAST_ANALYSIS_CALL m_reg_sarx_op(THREADID tid, uint64_t addr, uint32_t reg_dst, uint8_t *reg_cnt, uint32_t byteCount) {
+    uint32_t imm = (uint32_t)(*(reg_cnt));
+
+    m_sarx_op(tid, addr, reg_dst, imm, byteCount);
+}
+
+void ins_sarx_op(INS ins) {
+    REG reg_dst = INS_OperandReg(ins, OP_0);
+    REG reg_cnt = INS_OperandReg(ins, OP_2);
+    if (INS_OperandIsReg(ins, OP_1)) {
+        REG reg_src = INS_OperandReg(ins, OP_1);
+        if (REG_is_gr32(reg_dst)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_sarx_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 4,
+                               IARG_END);
+        } else if (REG_is_gr64(reg_dst)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)r_reg_sarx_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_UINT32, REG_INDX(reg_src),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 8,
+                               IARG_END);
+        } else {
+            xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+            LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+        }
+    } else {
+        if (REG_is_gr32(reg_dst)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_sarx_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 4,
+                               IARG_END);
+        } else if (REG_is_gr64(reg_dst)) {
+            INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_sarx_op,
+                               IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
+                               IARG_MEMORYWRITE_EA,
+                               IARG_UINT32, REG_INDX(reg_dst),
+                               IARG_REG_CONST_REFERENCE, reg_cnt,
+                               IARG_UINT32, 8,
+                               IARG_END);
+        } else {
+            xed_iclass_enum_t ins_indx = (xed_iclass_enum_t)INS_Opcode(ins);
+            LOG(std::string(__func__) + ": unhandled opcode (opcode=" + decstr(ins_indx) + ")\n");
+        }
+    }
+}

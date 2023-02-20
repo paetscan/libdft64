@@ -4448,7 +4448,7 @@ void PIN_FAST_ANALYSIS_CALL r2r_combine_allinone_opy(THREADID tid, uint32_t dst,
 
 void PIN_FAST_ANALYSIS_CALL m2r_combine_allinone_opw(THREADID tid, uint32_t dst, ADDRINT src) {
     tag_t src_tag[] = M16TAG(src);
-    tag_t dst_tag[] = M16TAG(dst);
+    tag_t dst_tag[] = R16TAG(dst);
 
     tag_t combined_src_tag = tag_traits<tag_t>::cleared_val;
     for (size_t i = 0; i < 2; ++i) {
@@ -4467,7 +4467,7 @@ void PIN_FAST_ANALYSIS_CALL m2r_combine_allinone_opw(THREADID tid, uint32_t dst,
 
 void PIN_FAST_ANALYSIS_CALL m2r_combine_allinone_opl(THREADID tid, uint32_t dst, ADDRINT src) {
     tag_t src_tag[] = M32TAG(src);
-    tag_t dst_tag[] = M32TAG(dst);
+    tag_t dst_tag[] = R32TAG(dst);
 
     tag_t combined_src_tag = tag_traits<tag_t>::cleared_val;
     for (size_t i = 0; i < 4; ++i) {
@@ -4486,7 +4486,7 @@ void PIN_FAST_ANALYSIS_CALL m2r_combine_allinone_opl(THREADID tid, uint32_t dst,
 
 void PIN_FAST_ANALYSIS_CALL m2r_combine_allinone_opq(THREADID tid, uint32_t dst, ADDRINT src) {
     tag_t src_tag[] = M64TAG(src);
-    tag_t dst_tag[] = M64TAG(dst);
+    tag_t dst_tag[] = R64TAG(dst);
 
     tag_t combined_src_tag = tag_traits<tag_t>::cleared_val;
     for (size_t i = 0; i < 8; ++i) {
@@ -4505,7 +4505,7 @@ void PIN_FAST_ANALYSIS_CALL m2r_combine_allinone_opq(THREADID tid, uint32_t dst,
 
 void PIN_FAST_ANALYSIS_CALL m2r_combine_allinone_opx(THREADID tid, uint32_t dst, ADDRINT src) {
     tag_t src_tag[] = M128TAG(src);
-    tag_t dst_tag[] = M128TAG(dst);
+    tag_t dst_tag[] = R128TAG(dst);
 
     tag_t combined_src_tag = tag_traits<tag_t>::cleared_val;
     for (size_t i = 0; i < 16; ++i) {
@@ -4524,7 +4524,7 @@ void PIN_FAST_ANALYSIS_CALL m2r_combine_allinone_opx(THREADID tid, uint32_t dst,
 
 void PIN_FAST_ANALYSIS_CALL m2r_combine_allinone_opy(THREADID tid, uint32_t dst, ADDRINT src) {
     tag_t src_tag[] = M256TAG(src);
-    tag_t dst_tag[] = M256TAG(dst);
+    tag_t dst_tag[] = R256TAG(dst);
 
     tag_t combined_src_tag = tag_traits<tag_t>::cleared_val;
     for (size_t i = 0; i < 32; ++i) {

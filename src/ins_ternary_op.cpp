@@ -770,7 +770,7 @@ void ins_sarx_op(INS ins) {
         if (REG_is_gr32(reg_dst)) {
             INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_sarx_op,
                                IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
-                               IARG_MEMORYWRITE_EA,
+                               IARG_MEMORYREAD_EA,
                                IARG_UINT32, REG_INDX(reg_dst),
                                IARG_REG_CONST_REFERENCE, reg_cnt,
                                IARG_UINT32, 4,
@@ -778,7 +778,7 @@ void ins_sarx_op(INS ins) {
         } else if (REG_is_gr64(reg_dst)) {
             INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)m_reg_sarx_op,
                                IARG_FAST_ANALYSIS_CALL, IARG_THREAD_ID,
-                               IARG_MEMORYWRITE_EA,
+                               IARG_MEMORYREAD_EA,
                                IARG_UINT32, REG_INDX(reg_dst),
                                IARG_REG_CONST_REFERENCE, reg_cnt,
                                IARG_UINT32, 8,

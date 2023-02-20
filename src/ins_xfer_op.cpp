@@ -415,7 +415,7 @@ void ins_push_op(INS ins) {
     }
   } else {
     INT32 n = INS_OperandWidth(ins, OP_0) / 8;
-    M_CLEAR_N(n);
+    M_CLEAR_N(8);  // push always writes 8 bytes
   }
 }
 

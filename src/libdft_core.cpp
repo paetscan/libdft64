@@ -519,9 +519,13 @@ void ins_inspect(INS ins) {
         case XED_ICLASS_VPANDN:
             ins_ternary_op(ins);
             break;
-        case XED_ICLASS_PACKUSWB:
-            ins_binary_op(ins);
-            break;
+        case XED_ICLASS_VANDPS:
+        case XED_ICLASS_VXORPS:
+            ins_ternary_op(ins);
+            break;    
+        //case XED_ICLASS_PACKUSWB:
+            //ins_binary_op(ins);
+            //break;
         case XED_ICLASS_PADDD:
         case XED_ICLASS_PADDQ:
             ins_padd_op(ins);
@@ -551,6 +555,9 @@ void ins_inspect(INS ins) {
         case XED_ICLASS_PINSRD:
             ins_pinsrd_op(ins);
             break;
+        case XED_ICLASS_VPINSRQ:
+            ins_vpinsrq_op(ins);
+            break;    
         case XED_ICLASS_SHA1MSG1:
         case XED_ICLASS_SHA1MSG2:
         case XED_ICLASS_SHA1RNDS4:
@@ -591,7 +598,7 @@ void ins_inspect(INS ins) {
             ins_ternary_op(ins);
             break;
         case XED_ICLASS_PSHUFB:
-        case XED_ICLASS_VPSHUFB:
+        //case XED_ICLASS_VPSHUFB:
             // Fixme: does some overtainting (depending on contents of second operand)
             ins_combine_all_bytes(ins);
             break;
@@ -681,11 +688,12 @@ void ins_inspect(INS ins) {
             //case XED_ICLASS_SAL:
             ins_shl_op(ins);
             break;
-        case XED_ICLASS_SAR:
+        case XED_ICLASS_SAR: // Fixme: if flag taint included, this should be adjusted
         case XED_ICLASS_SHR:
             ins_shr_op(ins);
             break;
-        case XED_ICLASS_SARX:
+        case XED_ICLASS_SARX: // Fixme: if flag taint included, this should be adjusted
+        case XED_ICLASS_SHRX:
             ins_sarx_op(ins);
             break;
 
